@@ -294,6 +294,8 @@ std::unique_ptr<Statement> Parser::parseStatement() {
             return parseIfStatement();
         } else if (match(TokenType::WHILE)) {
             return parseWhileStatement();
+        } else if (match(TokenType::FOR)) {
+            return parseForStatement();
         } else {
             // Try to parse as assignment or expression statement
             auto expr = parseExpression();
@@ -363,6 +365,31 @@ std::unique_ptr<WhileStatement> Parser::parseWhileStatement() {
     auto body = parseStatement();
     
     return std::make_unique<WhileStatement>(std::move(condition), std::move(body));
+}
+
+std::unique_ptr<ForStatement> Parser::parseForStatement() {
+    // Parse: for variable := start to/downto end do statement
+    Token variableToken = consume(TokenType::IDENTIFIER, "Expected variable name");
+    std::string variable = variableToken.getValue();
+    
+    consume(TokenType::ASSIGN, "Expected ':='");
+    auto start = parseExpression();
+    
+    bool isDownto = false;
+    if (match(TokenType::TO)) {
+        isDownto = false;
+    } else if (match(TokenType::DOWNTO)) {
+        isDownto = true;
+    } else {
+        throw std::runtime_error("Expected 'to' or 'downto'");
+    }
+    
+    auto end = parseExpression();
+    consume(TokenType::DO, "Expected 'do'");
+    auto body = parseStatement();
+    
+    return std::make_unique<ForStatement>(variable, std::move(start), std::move(end), 
+                                        isDownto, std::move(body));
 }
 
 std::unique_ptr<ExpressionStatement> Parser::parseExpressionStatement() {

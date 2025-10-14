@@ -49,6 +49,7 @@ private:
     std::unique_ptr<AssignmentStatement> parseAssignmentStatement(std::unique_ptr<Expression> target);
     std::unique_ptr<IfStatement> parseIfStatement();
     std::unique_ptr<WhileStatement> parseWhileStatement();
+    std::unique_ptr<ForStatement> parseForStatement();
     std::unique_ptr<ExpressionStatement> parseExpressionStatement();
     
     std::unique_ptr<Expression> parseExpression();

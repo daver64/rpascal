@@ -157,6 +157,31 @@ void CppGenerator::visit(WhileStatement& node) {
     emitLine("}");
 }
 
+void CppGenerator::visit(ForStatement& node) {
+    emitIndent();
+    if (node.isDownto()) {
+        // For downto loops: for (var = start; var >= end; var--)
+        emit("for (" + node.getVariable() + " = ");
+        node.getStart()->accept(*this);
+        emit("; " + node.getVariable() + " >= ");
+        node.getEnd()->accept(*this);
+        emitLine("; " + node.getVariable() + "--) {");
+    } else {
+        // For to loops: for (var = start; var <= end; var++)
+        emit("for (" + node.getVariable() + " = ");
+        node.getStart()->accept(*this);
+        emit("; " + node.getVariable() + " <= ");
+        node.getEnd()->accept(*this);
+        emitLine("; " + node.getVariable() + "++) {");
+    }
+    
+    increaseIndent();
+    node.getBody()->accept(*this);
+    decreaseIndent();
+    
+    emitLine("}");
+}
+
 void CppGenerator::visit(ConstantDeclaration& node) {
     emitIndent();
     emit("const auto " + node.getName() + " = ");

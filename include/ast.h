@@ -230,6 +230,30 @@ private:
     std::unique_ptr<Statement> body_;
 };
 
+class ForStatement : public Statement {
+public:
+    ForStatement(const std::string& variable, std::unique_ptr<Expression> start, 
+                std::unique_ptr<Expression> end, bool isDownto, std::unique_ptr<Statement> body)
+        : variable_(variable), start_(std::move(start)), end_(std::move(end)), 
+          isDownto_(isDownto), body_(std::move(body)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::string& getVariable() const { return variable_; }
+    Expression* getStart() const { return start_.get(); }
+    Expression* getEnd() const { return end_.get(); }
+    bool isDownto() const { return isDownto_; }
+    Statement* getBody() const { return body_.get(); }
+    
+private:
+    std::string variable_;
+    std::unique_ptr<Expression> start_;
+    std::unique_ptr<Expression> end_;
+    bool isDownto_;
+    std::unique_ptr<Statement> body_;
+};
+
 // Declaration types
 class ConstantDeclaration : public Declaration {
 public:
@@ -371,6 +395,7 @@ public:
     virtual void visit(AssignmentStatement& node) = 0;
     virtual void visit(IfStatement& node) = 0;
     virtual void visit(WhileStatement& node) = 0;
+    virtual void visit(ForStatement& node) = 0;
     
     virtual void visit(ConstantDeclaration& node) = 0;
     virtual void visit(TypeDefinition& node) = 0;

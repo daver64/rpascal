@@ -31,6 +31,7 @@ public:
     void visit(AssignmentStatement& node) override;
     void visit(IfStatement& node) override;
     void visit(WhileStatement& node) override;
+    void visit(ForStatement& node) override;
     
     void visit(ConstantDeclaration& node) override;
     void visit(TypeDefinition& node) override;

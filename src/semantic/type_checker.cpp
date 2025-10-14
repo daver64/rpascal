@@ -174,6 +174,40 @@ void SemanticAnalyzer::visit(WhileStatement& node) {
     node.getBody()->accept(*this);
 }
 
+void SemanticAnalyzer::visit(ForStatement& node) {
+    // Check if loop variable exists
+    auto variable = symbolTable_->lookup(node.getVariable());
+    if (!variable) {
+        addError("Undefined variable: " + node.getVariable());
+        return;
+    }
+    
+    // Check that loop variable is an ordinal type (integer, char, enum, etc.)
+    DataType varType = variable->getDataType();
+    if (varType != DataType::INTEGER && varType != DataType::CHAR && varType != DataType::UNKNOWN) {
+        addError("For loop variable must be an ordinal type, got " + SymbolTable::dataTypeToString(varType));
+    }
+    
+    // Check start expression
+    node.getStart()->accept(*this);
+    DataType startType = currentExpressionType_;
+    
+    // Check end expression  
+    node.getEnd()->accept(*this);
+    DataType endType = currentExpressionType_;
+    
+    // Check that start and end expressions are compatible with loop variable
+    if (varType != DataType::UNKNOWN && startType != DataType::UNKNOWN && startType != varType) {
+        addError("For loop start expression type doesn't match variable type");
+    }
+    if (varType != DataType::UNKNOWN && endType != DataType::UNKNOWN && endType != varType) {
+        addError("For loop end expression type doesn't match variable type");
+    }
+    
+    // Check body
+    node.getBody()->accept(*this);
+}
+
 void SemanticAnalyzer::visit(ConstantDeclaration& node) {
     // Analyze the constant value expression
     node.getValue()->accept(*this);

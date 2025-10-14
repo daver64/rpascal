@@ -131,6 +131,17 @@ std::string WhileStatement::toString() const {
     return "WhileStatement(" + condition_->toString() + " do " + body_->toString() + ")";
 }
 
+// ForStatement
+void ForStatement::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string ForStatement::toString() const {
+    return "ForStatement(" + variable_ + " := " + start_->toString() + 
+           (isDownto_ ? " downto " : " to ") + end_->toString() + 
+           " do " + body_->toString() + ")";
+}
+
 // ConstantDeclaration
 void ConstantDeclaration::accept(ASTVisitor& visitor) {
     visitor.visit(*this);
