@@ -296,6 +296,8 @@ std::unique_ptr<Statement> Parser::parseStatement() {
             return parseWhileStatement();
         } else if (match(TokenType::FOR)) {
             return parseForStatement();
+        } else if (match(TokenType::REPEAT)) {
+            return parseRepeatStatement();
         } else {
             // Try to parse as assignment or expression statement
             auto expr = parseExpression();
@@ -390,6 +392,36 @@ std::unique_ptr<ForStatement> Parser::parseForStatement() {
     
     return std::make_unique<ForStatement>(variable, std::move(start), std::move(end), 
                                         isDownto, std::move(body));
+}
+
+std::unique_ptr<RepeatStatement> Parser::parseRepeatStatement() {
+    // Parse: repeat statements until condition
+    // In Pascal, repeat-until can contain multiple statements without BEGIN/END
+    
+    std::vector<std::unique_ptr<Statement>> statements;
+    
+    // Parse statements until we see UNTIL
+    while (!check(TokenType::UNTIL) && !isAtEnd()) {
+        statements.push_back(parseStatement());
+        
+        // Consume optional semicolon between statements
+        if (check(TokenType::SEMICOLON)) {
+            advance();
+        }
+    }
+    
+    // Create a compound statement for the body if we have multiple statements
+    std::unique_ptr<Statement> body;
+    if (statements.size() == 1) {
+        body = std::move(statements[0]);
+    } else {
+        body = std::make_unique<CompoundStatement>(std::move(statements));
+    }
+    
+    consume(TokenType::UNTIL, "Expected 'until'");
+    auto condition = parseExpression();
+    
+    return std::make_unique<RepeatStatement>(std::move(body), std::move(condition));
 }
 
 std::unique_ptr<ExpressionStatement> Parser::parseExpressionStatement() {

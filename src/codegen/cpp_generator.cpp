@@ -182,6 +182,20 @@ void CppGenerator::visit(ForStatement& node) {
     emitLine("}");
 }
 
+void CppGenerator::visit(RepeatStatement& node) {
+    emitIndent();
+    emitLine("do {");
+    
+    increaseIndent();
+    node.getBody()->accept(*this);
+    decreaseIndent();
+    
+    emitIndent();
+    emit("} while (!(");
+    node.getCondition()->accept(*this);
+    emitLine("));");
+}
+
 void CppGenerator::visit(ConstantDeclaration& node) {
     emitIndent();
     emit("const auto " + node.getName() + " = ");

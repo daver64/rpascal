@@ -254,6 +254,22 @@ private:
     std::unique_ptr<Statement> body_;
 };
 
+class RepeatStatement : public Statement {
+public:
+    RepeatStatement(std::unique_ptr<Statement> body, std::unique_ptr<Expression> condition)
+        : body_(std::move(body)), condition_(std::move(condition)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    Statement* getBody() const { return body_.get(); }
+    Expression* getCondition() const { return condition_.get(); }
+    
+private:
+    std::unique_ptr<Statement> body_;
+    std::unique_ptr<Expression> condition_;
+};
+
 // Declaration types
 class ConstantDeclaration : public Declaration {
 public:
@@ -396,6 +412,7 @@ public:
     virtual void visit(IfStatement& node) = 0;
     virtual void visit(WhileStatement& node) = 0;
     virtual void visit(ForStatement& node) = 0;
+    virtual void visit(RepeatStatement& node) = 0;
     
     virtual void visit(ConstantDeclaration& node) = 0;
     virtual void visit(TypeDefinition& node) = 0;

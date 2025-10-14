@@ -208,6 +208,17 @@ void SemanticAnalyzer::visit(ForStatement& node) {
     node.getBody()->accept(*this);
 }
 
+void SemanticAnalyzer::visit(RepeatStatement& node) {
+    // Check body
+    node.getBody()->accept(*this);
+    
+    // Check condition - must be boolean
+    node.getCondition()->accept(*this);
+    if (currentExpressionType_ != DataType::BOOLEAN && currentExpressionType_ != DataType::UNKNOWN) {
+        addError("Repeat-until condition must be boolean, got " + SymbolTable::dataTypeToString(currentExpressionType_));
+    }
+}
+
 void SemanticAnalyzer::visit(ConstantDeclaration& node) {
     // Analyze the constant value expression
     node.getValue()->accept(*this);

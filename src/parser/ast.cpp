@@ -142,6 +142,16 @@ std::string ForStatement::toString() const {
            " do " + body_->toString() + ")";
 }
 
+// RepeatStatement
+void RepeatStatement::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string RepeatStatement::toString() const {
+    return "RepeatStatement(repeat " + body_->toString() + " until " + 
+           condition_->toString() + ")";
+}
+
 // ConstantDeclaration
 void ConstantDeclaration::accept(ASTVisitor& visitor) {
     visitor.visit(*this);
