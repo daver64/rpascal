@@ -542,13 +542,24 @@ std::string Parser::parseTypeDefinition() {
     // For now, implement a simple type definition parser
     // This will handle basic cases and can be expanded later
     
-    if (check(TokenType::INTEGER_LITERAL)) {
-        // Range type: 1..10
+    if (check(TokenType::INTEGER_LITERAL) || check(TokenType::CHAR_LITERAL)) {
+        // Range type: 1..10 or 'A'..'Z'
         Token startToken = currentToken_;
         advance();
         consume(TokenType::RANGE, "Expected '..' in range type");
-        Token endToken = consume(TokenType::INTEGER_LITERAL, "Expected end value in range type");
-        return startToken.getValue() + ".." + endToken.getValue();
+        
+        TokenType expectedEndType = startToken.getType();
+        Token endToken = consume(expectedEndType, 
+            expectedEndType == TokenType::INTEGER_LITERAL ? 
+            "Expected integer end value in range type" : 
+            "Expected character end value in range type");
+            
+        // For character literals, preserve the quotes in the definition
+        if (startToken.getType() == TokenType::CHAR_LITERAL) {
+            return "'" + startToken.getValue() + "'.." + "'" + endToken.getValue() + "'";
+        } else {
+            return startToken.getValue() + ".." + endToken.getValue();
+        }
     } else if (check(TokenType::LEFT_PAREN)) {
         // Enumeration type: (Red, Green, Blue)
         advance(); // consume '('

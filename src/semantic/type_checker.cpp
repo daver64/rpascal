@@ -184,7 +184,9 @@ void SemanticAnalyzer::visit(ConstantDeclaration& node) {
 
 void SemanticAnalyzer::visit(TypeDefinition& node) {
     // Register the type definition in the symbol table as a custom type
-    symbolTable_->define(node.getName(), SymbolType::TYPE_DEF, DataType::CUSTOM);
+    auto symbol = std::make_shared<Symbol>(node.getName(), SymbolType::TYPE_DEF, DataType::CUSTOM);
+    symbol->setTypeDefinition(node.getDefinition());
+    symbolTable_->define(node.getName(), symbol);
 }
 
 void SemanticAnalyzer::visit(VariableDeclaration& node) {
@@ -194,7 +196,9 @@ void SemanticAnalyzer::visit(VariableDeclaration& node) {
         return;
     }
     
-    symbolTable_->define(node.getName(), SymbolType::VARIABLE, dataType);
+    auto symbol = std::make_shared<Symbol>(node.getName(), SymbolType::VARIABLE, dataType);
+    symbol->setTypeName(node.getType()); // Store the original type name
+    symbolTable_->define(node.getName(), symbol);
     
     // Check initializer if present
     if (node.getInitializer()) {
@@ -506,6 +510,33 @@ void SemanticAnalyzer::checkAssignment(Expression* target, Expression* value) {
     // Get types (only for simple variable assignments)
     DataType targetType = targetSymbol->getDataType();
     DataType valueType = getExpressionType(value);
+    
+    // Special handling for custom types (ranges)
+    if (targetType == DataType::CUSTOM) {
+        // Get the type name and look up its definition
+        std::string typeName = targetSymbol->getTypeName();
+        auto typeDefSymbol = symbolTable_->lookup(typeName);
+        
+        if (typeDefSymbol && typeDefSymbol->getSymbolType() == SymbolType::TYPE_DEF) {
+            std::string definition = typeDefSymbol->getTypeDefinition();
+            
+            // Check if it's a range type
+            if (definition.find("..") != std::string::npos) {
+                // Determine if it's a character or numeric range
+                if (definition.find("'") != std::string::npos) {
+                    // Character range - compatible with char
+                    if (valueType == DataType::CHAR) {
+                        return; // Compatible
+                    }
+                } else {
+                    // Numeric range - compatible with integer
+                    if (valueType == DataType::INTEGER) {
+                        return; // Compatible
+                    }
+                }
+            }
+        }
+    }
     
     if (!areTypesCompatible(targetType, valueType)) {
         addError("Type mismatch in assignment: cannot assign " +

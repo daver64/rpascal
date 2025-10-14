@@ -40,6 +40,14 @@ public:
     DataType getDataType() const { return dataType_; }
     int getScopeLevel() const { return scopeLevel_; }
     
+    // For type definitions
+    void setTypeDefinition(const std::string& definition) { typeDefinition_ = definition; }
+    const std::string& getTypeDefinition() const { return typeDefinition_; }
+    
+    // For variables with custom types
+    void setTypeName(const std::string& typeName) { typeName_ = typeName; }
+    const std::string& getTypeName() const { return typeName_; }
+    
     // For functions and procedures
     void addParameter(const std::string& paramName, DataType paramType) {
         parameters_.push_back({paramName, paramType});
@@ -59,6 +67,8 @@ private:
     SymbolType symbolType_;
     DataType dataType_;
     int scopeLevel_;
+    std::string typeDefinition_;  // For custom types, stores the definition string
+    std::string typeName_;        // For variables, stores the original type name  
     std::vector<std::pair<std::string, DataType>> parameters_;
     DataType returnType_ = DataType::VOID;
 };

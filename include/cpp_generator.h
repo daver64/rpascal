@@ -62,6 +62,7 @@ private:
     std::string mapPascalFunctionToCpp(const std::string& functionName);
     void generateRecordDefinition(const std::string& typeName, const std::string& definition);
     void generateArrayDefinition(const std::string& typeName, const std::string& definition);
+    void generateRangeDefinition(const std::string& typeName, const std::string& definition);
     
     // Expression and statement helpers
     void generateExpression(Expression* expr);

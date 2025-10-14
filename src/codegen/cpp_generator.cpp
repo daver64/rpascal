@@ -175,8 +175,12 @@ void CppGenerator::visit(TypeDefinition& node) {
     else if (definition.find("array[") != std::string::npos) {
         generateArrayDefinition(node.getName(), definition);
     } 
+    // Handle range types  
+    else if (definition.find("..") != std::string::npos) {
+        generateRangeDefinition(node.getName(), definition);
+    }
     else {
-        // For other types (enums, ranges), generate a comment for now
+        // For other types (enums), generate a comment for now
         emitLine("// Type definition: " + node.getName() + " = " + definition);
         emitLine("using " + node.getName() + " = int; // TODO: implement proper type");
     }
@@ -615,6 +619,54 @@ void CppGenerator::generateArrayDefinition(const std::string& typeName, const st
         emitLine("// Array definition: " + typeName + " = " + definition);
         emitLine("using " + typeName + " = int; // TODO: implement proper array type");
     }
+}
+
+void CppGenerator::generateRangeDefinition(const std::string& typeName, const std::string& definition) {
+    // Parse range definition: "1..10" or "'A'..'Z'" 
+    
+    size_t dotdotPos = definition.find("..");
+    if (dotdotPos != std::string::npos) {
+        std::string startStr = definition.substr(0, dotdotPos);
+        std::string endStr = definition.substr(dotdotPos + 2);
+        
+        // Trim whitespace
+        startStr.erase(0, startStr.find_first_not_of(" \t\n\r"));
+        startStr.erase(startStr.find_last_not_of(" \t\n\r") + 1);
+        endStr.erase(0, endStr.find_first_not_of(" \t\n\r"));
+        endStr.erase(endStr.find_last_not_of(" \t\n\r") + 1);
+        
+        // Check if it's a character range (if the definition contains single quotes)
+        if (definition.find("'") != std::string::npos) {
+            // Character range: 'A'..'Z' - extract characters from quoted strings
+            char startChar = startStr[1]; // Skip the quote
+            char endChar = endStr[1];     // Skip the quote
+            
+            emitLine("// Character range: " + typeName + " = " + definition);
+            emitLine("using " + typeName + " = char;");
+            emitLine("const char " + typeName + "_MIN = '" + std::string(1, startChar) + "';");
+            emitLine("const char " + typeName + "_MAX = '" + std::string(1, endChar) + "';");
+        } else {
+            // Numeric range: 1..10
+            try {
+                int start = std::stoi(startStr);
+                int end = std::stoi(endStr);
+                
+                emitLine("// Numeric range: " + typeName + " = " + definition);
+                emitLine("using " + typeName + " = int;");
+                emitLine("const int " + typeName + "_MIN = " + std::to_string(start) + ";");
+                emitLine("const int " + typeName + "_MAX = " + std::to_string(end) + ";");
+            } catch (const std::exception&) {
+                // Fallback for non-numeric ranges
+                emitLine("// Range definition: " + typeName + " = " + definition);
+                emitLine("using " + typeName + " = int; // TODO: implement proper range type");
+            }
+        }
+    } else {
+        // Malformed range definition
+        emitLine("// Range definition: " + typeName + " = " + definition);
+        emitLine("using " + typeName + " = int; // TODO: implement proper range type");
+    }
+    emitLine("");
 }
 
 } // namespace rpascal
