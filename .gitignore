@@ -1,6 +1,9 @@
 # Prerequisites
 *.d
 
+mingw64/
+build/
+
 # Compiled Object files
 *.slo
 *.lo

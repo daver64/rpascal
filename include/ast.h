@@ -1,0 +1,384 @@
+#pragma once
+
+#include "token.h"
+#include <memory>
+#include <vector>
+#include <string>
+
+namespace rpascal {
+
+// Forward declarations
+class ASTVisitor;
+
+// Base AST Node
+class ASTNode {
+public:
+    virtual ~ASTNode() = default;
+    virtual void accept(ASTVisitor& visitor) = 0;
+    virtual std::string toString() const = 0;
+    
+    SourceLocation getLocation() const { return location_; }
+    void setLocation(const SourceLocation& loc) { location_ = loc; }
+    
+protected:
+    SourceLocation location_;
+};
+
+// Expression nodes
+class Expression : public ASTNode {
+public:
+    virtual ~Expression() = default;
+};
+
+class Statement : public ASTNode {
+public:
+    virtual ~Statement() = default;
+};
+
+class Declaration : public ASTNode {
+public:
+    virtual ~Declaration() = default;
+};
+
+// Specific Expression types
+class LiteralExpression : public Expression {
+public:
+    explicit LiteralExpression(const Token& token) : token_(token) {}
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const Token& getToken() const { return token_; }
+    
+private:
+    Token token_;
+};
+
+class IdentifierExpression : public Expression {
+public:
+    explicit IdentifierExpression(const std::string& name) : name_(name) {}
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::string& getName() const { return name_; }
+    
+private:
+    std::string name_;
+};
+
+class BinaryExpression : public Expression {
+public:
+    BinaryExpression(std::unique_ptr<Expression> left, const Token& op, std::unique_ptr<Expression> right)
+        : left_(std::move(left)), operator_(op), right_(std::move(right)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    Expression* getLeft() const { return left_.get(); }
+    Expression* getRight() const { return right_.get(); }
+    const Token& getOperator() const { return operator_; }
+    
+private:
+    std::unique_ptr<Expression> left_;
+    Token operator_;
+    std::unique_ptr<Expression> right_;
+};
+
+class UnaryExpression : public Expression {
+public:
+    UnaryExpression(const Token& op, std::unique_ptr<Expression> operand)
+        : operator_(op), operand_(std::move(operand)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    Expression* getOperand() const { return operand_.get(); }
+    const Token& getOperator() const { return operator_; }
+    
+private:
+    Token operator_;
+    std::unique_ptr<Expression> operand_;
+};
+
+class CallExpression : public Expression {
+public:
+    CallExpression(std::unique_ptr<Expression> callee, std::vector<std::unique_ptr<Expression>> arguments)
+        : callee_(std::move(callee)), arguments_(std::move(arguments)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    Expression* getCallee() const { return callee_.get(); }
+    const std::vector<std::unique_ptr<Expression>>& getArguments() const { return arguments_; }
+    
+private:
+    std::unique_ptr<Expression> callee_;
+    std::vector<std::unique_ptr<Expression>> arguments_;
+};
+
+class FieldAccessExpression : public Expression {
+public:
+    FieldAccessExpression(std::unique_ptr<Expression> object, const std::string& fieldName)
+        : object_(std::move(object)), fieldName_(fieldName) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    Expression* getObject() const { return object_.get(); }
+    const std::string& getFieldName() const { return fieldName_; }
+    
+private:
+    std::unique_ptr<Expression> object_;
+    std::string fieldName_;
+};
+
+class ArrayIndexExpression : public Expression {
+public:
+    ArrayIndexExpression(std::unique_ptr<Expression> array, std::unique_ptr<Expression> index)
+        : array_(std::move(array)), index_(std::move(index)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    Expression* getArray() const { return array_.get(); }
+    Expression* getIndex() const { return index_.get(); }
+    
+private:
+    std::unique_ptr<Expression> array_;
+    std::unique_ptr<Expression> index_;
+};
+
+// Statement types
+class ExpressionStatement : public Statement {
+public:
+    explicit ExpressionStatement(std::unique_ptr<Expression> expression)
+        : expression_(std::move(expression)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    Expression* getExpression() const { return expression_.get(); }
+    
+private:
+    std::unique_ptr<Expression> expression_;
+};
+
+class CompoundStatement : public Statement {
+public:
+    explicit CompoundStatement(std::vector<std::unique_ptr<Statement>> statements)
+        : statements_(std::move(statements)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::vector<std::unique_ptr<Statement>>& getStatements() const { return statements_; }
+    
+private:
+    std::vector<std::unique_ptr<Statement>> statements_;
+};
+
+class AssignmentStatement : public Statement {
+public:
+    AssignmentStatement(std::unique_ptr<Expression> target, std::unique_ptr<Expression> value)
+        : target_(std::move(target)), value_(std::move(value)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    Expression* getTarget() const { return target_.get(); }
+    Expression* getValue() const { return value_.get(); }
+    
+private:
+    std::unique_ptr<Expression> target_;
+    std::unique_ptr<Expression> value_;
+};
+
+class IfStatement : public Statement {
+public:
+    IfStatement(std::unique_ptr<Expression> condition, 
+                std::unique_ptr<Statement> thenStmt,
+                std::unique_ptr<Statement> elseStmt = nullptr)
+        : condition_(std::move(condition)), 
+          thenStatement_(std::move(thenStmt)), 
+          elseStatement_(std::move(elseStmt)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    Expression* getCondition() const { return condition_.get(); }
+    Statement* getThenStatement() const { return thenStatement_.get(); }
+    Statement* getElseStatement() const { return elseStatement_.get(); }
+    
+private:
+    std::unique_ptr<Expression> condition_;
+    std::unique_ptr<Statement> thenStatement_;
+    std::unique_ptr<Statement> elseStatement_;
+};
+
+class WhileStatement : public Statement {
+public:
+    WhileStatement(std::unique_ptr<Expression> condition, std::unique_ptr<Statement> body)
+        : condition_(std::move(condition)), body_(std::move(body)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    Expression* getCondition() const { return condition_.get(); }
+    Statement* getBody() const { return body_.get(); }
+    
+private:
+    std::unique_ptr<Expression> condition_;
+    std::unique_ptr<Statement> body_;
+};
+
+// Declaration types
+class ConstantDeclaration : public Declaration {
+public:
+    ConstantDeclaration(const std::string& name, std::unique_ptr<Expression> value)
+        : name_(name), value_(std::move(value)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::string& getName() const { return name_; }
+    Expression* getValue() const { return value_.get(); }
+    
+private:
+    std::string name_;
+    std::unique_ptr<Expression> value_;
+};
+
+class TypeDefinition : public Declaration {
+public:
+    TypeDefinition(const std::string& name, const std::string& definition)
+        : name_(name), definition_(definition) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::string& getName() const { return name_; }
+    const std::string& getDefinition() const { return definition_; }
+    
+private:
+    std::string name_;
+    std::string definition_;
+};
+
+class VariableDeclaration : public Declaration {
+public:
+    VariableDeclaration(const std::string& name, const std::string& type, 
+                       std::unique_ptr<Expression> initializer = nullptr)
+        : name_(name), type_(type), initializer_(std::move(initializer)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::string& getName() const { return name_; }
+    const std::string& getType() const { return type_; }
+    Expression* getInitializer() const { return initializer_.get(); }
+    
+private:
+    std::string name_;
+    std::string type_;
+    std::unique_ptr<Expression> initializer_;
+};
+
+class ProcedureDeclaration : public Declaration {
+public:
+    ProcedureDeclaration(const std::string& name,
+                        std::vector<std::unique_ptr<VariableDeclaration>> parameters,
+                        std::vector<std::unique_ptr<VariableDeclaration>> localVariables,
+                        std::unique_ptr<CompoundStatement> body)
+        : name_(name), parameters_(std::move(parameters)), 
+          localVariables_(std::move(localVariables)), body_(std::move(body)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::string& getName() const { return name_; }
+    const std::vector<std::unique_ptr<VariableDeclaration>>& getParameters() const { return parameters_; }
+    const std::vector<std::unique_ptr<VariableDeclaration>>& getLocalVariables() const { return localVariables_; }
+    CompoundStatement* getBody() const { return body_.get(); }
+    
+private:
+    std::string name_;
+    std::vector<std::unique_ptr<VariableDeclaration>> parameters_;
+    std::vector<std::unique_ptr<VariableDeclaration>> localVariables_;
+    std::unique_ptr<CompoundStatement> body_;
+};
+
+class FunctionDeclaration : public Declaration {
+public:
+    FunctionDeclaration(const std::string& name,
+                       std::vector<std::unique_ptr<VariableDeclaration>> parameters,
+                       const std::string& returnType,
+                       std::vector<std::unique_ptr<VariableDeclaration>> localVariables,
+                       std::unique_ptr<CompoundStatement> body)
+        : name_(name), parameters_(std::move(parameters)), 
+          returnType_(returnType), localVariables_(std::move(localVariables)), body_(std::move(body)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::string& getName() const { return name_; }
+    const std::vector<std::unique_ptr<VariableDeclaration>>& getParameters() const { return parameters_; }
+    const std::string& getReturnType() const { return returnType_; }
+    const std::vector<std::unique_ptr<VariableDeclaration>>& getLocalVariables() const { return localVariables_; }
+    CompoundStatement* getBody() const { return body_.get(); }
+    
+private:
+    std::string name_;
+    std::vector<std::unique_ptr<VariableDeclaration>> parameters_;
+    std::string returnType_;
+    std::vector<std::unique_ptr<VariableDeclaration>> localVariables_;
+    std::unique_ptr<CompoundStatement> body_;
+};
+
+// Program node (root of AST)
+class Program : public ASTNode {
+public:
+    Program(const std::string& name, std::vector<std::unique_ptr<Declaration>> declarations,
+            std::unique_ptr<CompoundStatement> mainBlock)
+        : name_(name), declarations_(std::move(declarations)), mainBlock_(std::move(mainBlock)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::string& getName() const { return name_; }
+    const std::vector<std::unique_ptr<Declaration>>& getDeclarations() const { return declarations_; }
+    CompoundStatement* getMainBlock() const { return mainBlock_.get(); }
+    
+private:
+    std::string name_;
+    std::vector<std::unique_ptr<Declaration>> declarations_;
+    std::unique_ptr<CompoundStatement> mainBlock_;
+};
+
+// Visitor pattern for AST traversal
+class ASTVisitor {
+public:
+    virtual ~ASTVisitor() = default;
+    
+    virtual void visit(LiteralExpression& node) = 0;
+    virtual void visit(IdentifierExpression& node) = 0;
+    virtual void visit(BinaryExpression& node) = 0;
+    virtual void visit(UnaryExpression& node) = 0;
+    virtual void visit(CallExpression& node) = 0;
+    virtual void visit(FieldAccessExpression& node) = 0;
+    virtual void visit(ArrayIndexExpression& node) = 0;
+    
+    virtual void visit(ExpressionStatement& node) = 0;
+    virtual void visit(CompoundStatement& node) = 0;
+    virtual void visit(AssignmentStatement& node) = 0;
+    virtual void visit(IfStatement& node) = 0;
+    virtual void visit(WhileStatement& node) = 0;
+    
+    virtual void visit(ConstantDeclaration& node) = 0;
+    virtual void visit(TypeDefinition& node) = 0;
+    virtual void visit(VariableDeclaration& node) = 0;
+    virtual void visit(ProcedureDeclaration& node) = 0;
+    virtual void visit(FunctionDeclaration& node) = 0;
+    
+    virtual void visit(Program& node) = 0;
+};
+
+} // namespace rpascal
