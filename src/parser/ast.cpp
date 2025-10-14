@@ -197,6 +197,21 @@ std::string CaseStatement::toString() const {
     return result;
 }
 
+// WithStatement
+void WithStatement::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string WithStatement::toString() const {
+    std::string result = "WithStatement(";
+    for (size_t i = 0; i < withExpressions_.size(); ++i) {
+        if (i > 0) result += ", ";
+        result += withExpressions_[i]->toString();
+    }
+    result += " do " + body_->toString() + ")";
+    return result;
+}
+
 // ConstantDeclaration
 void ConstantDeclaration::accept(ASTVisitor& visitor) {
     visitor.visit(*this);

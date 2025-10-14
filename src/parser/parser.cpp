@@ -300,6 +300,8 @@ std::unique_ptr<Statement> Parser::parseStatement() {
             return parseRepeatStatement();
         } else if (match(TokenType::CASE)) {
             return parseCaseStatement();
+        } else if (match(TokenType::WITH)) {
+            return parseWithStatement();
         } else {
             // Try to parse as assignment or expression statement
             auto expr = parseExpression();
@@ -464,6 +466,26 @@ std::unique_ptr<CaseStatement> Parser::parseCaseStatement() {
     consume(TokenType::END, "Expected 'end'");
     
     return std::make_unique<CaseStatement>(std::move(expression), std::move(branches), std::move(elseClause));
+}
+
+std::unique_ptr<WithStatement> Parser::parseWithStatement() {
+    // Parse: with expr1, expr2 do statement
+    
+    std::vector<std::unique_ptr<Expression>> withExpressions;
+    
+    // Parse first expression
+    withExpressions.push_back(parseExpression());
+    
+    // Parse additional expressions separated by commas
+    while (match(TokenType::COMMA)) {
+        withExpressions.push_back(parseExpression());
+    }
+    
+    consume(TokenType::DO, "Expected 'do' after with expressions");
+    
+    auto body = parseStatement();
+    
+    return std::make_unique<WithStatement>(std::move(withExpressions), std::move(body));
 }
 
 std::unique_ptr<ExpressionStatement> Parser::parseExpressionStatement() {
@@ -655,11 +677,31 @@ std::string Parser::parseTypeName() {
     // Accept both IDENTIFIER and type keywords as type names
     if (check(TokenType::IDENTIFIER) || 
         check(TokenType::INTEGER) || check(TokenType::REAL) || 
-        check(TokenType::BOOLEAN) || check(TokenType::CHAR) || 
-        check(TokenType::STRING)) {
+        check(TokenType::BOOLEAN) || check(TokenType::CHAR)) {
         Token typeToken = currentToken_;
         advance();
         return typeToken.getValue();
+    } else if (check(TokenType::STRING)) {
+        advance(); // consume 'string'
+        
+        // Check for bounded string: string[N]
+        if (check(TokenType::LEFT_BRACKET)) {
+            advance(); // consume '['
+            
+            // Parse the size
+            if (check(TokenType::INTEGER_LITERAL)) {
+                std::string size = currentToken_.getValue();
+                advance();
+                consume(TokenType::RIGHT_BRACKET, "Expected ']' after string size");
+                return "string[" + size + "]";
+            } else {
+                addError("Expected integer size in bounded string");
+                throw std::runtime_error("Expected integer size in bounded string");
+            }
+        } else {
+            // Unbounded string
+            return "string";
+        }
     }
     
     addError("Expected type name");

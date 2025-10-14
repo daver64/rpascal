@@ -57,8 +57,42 @@ void SemanticAnalyzer::visit(LiteralExpression& node) {
 void SemanticAnalyzer::visit(IdentifierExpression& node) {
     auto symbol = symbolTable_->lookup(node.getName());
     if (!symbol) {
-        addError("Undefined identifier: " + node.getName());
-        currentExpressionType_ = DataType::UNKNOWN;
+        // Check if this identifier could be a field in a with context
+        bool foundInWithContext = false;
+        
+        for (auto it = withContextStack_.rbegin(); it != withContextStack_.rend(); ++it) {
+            const WithContext& context = *it;
+            
+            if (context.recordType == DataType::CUSTOM && !context.recordTypeName.empty()) {
+                // Look up the record type definition
+                auto recordTypeSymbol = symbolTable_->lookup(context.recordTypeName);
+                if (recordTypeSymbol && recordTypeSymbol->getSymbolType() == SymbolType::TYPE_DEF) {
+                    std::string recordDef = recordTypeSymbol->getTypeDefinition();
+                    
+                    // Check if the identifier is a field in this record
+                    std::string fieldType = getFieldTypeFromRecord(node.getName(), recordDef);
+                    if (!fieldType.empty()) {
+                        // Resolve the field type
+                        DataType resolvedType = symbolTable_->stringToDataType(fieldType);
+                        if (resolvedType == DataType::UNKNOWN) {
+                            resolvedType = symbolTable_->resolveDataType(fieldType);
+                        }
+                        
+                        currentExpressionType_ = resolvedType;
+                        foundInWithContext = true;
+                        
+                        // Mark that this identifier was resolved in with context
+                        node.setWithVariable(context.withVariable);
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if (!foundInWithContext) {
+            addError("Undefined identifier: " + node.getName());
+            currentExpressionType_ = DataType::UNKNOWN;
+        }
         return;
     }
     
@@ -154,6 +188,9 @@ void SemanticAnalyzer::visit(CompoundStatement& node) {
 }
 
 void SemanticAnalyzer::visit(AssignmentStatement& node) {
+    // First visit the target to trigger with field resolution if needed
+    node.getTarget()->accept(*this);
+    
     checkAssignment(node.getTarget(), node.getValue());
 }
 
@@ -255,6 +292,45 @@ void SemanticAnalyzer::visit(CaseStatement& node) {
     // Check the else clause if present
     if (node.getElseClause()) {
         node.getElseClause()->accept(*this);
+    }
+}
+
+void SemanticAnalyzer::visit(WithStatement& node) {
+    // Check all with expressions and set up with contexts
+    for (const auto& withExpr : node.getWithExpressions()) {
+        withExpr->accept(*this);
+        
+        // Try to extract the with variable and its type
+        if (auto identifierExpr = dynamic_cast<IdentifierExpression*>(withExpr.get())) {
+            std::string varName = identifierExpr->getName();
+            auto symbol = symbolTable_->lookup(varName);
+            
+            if (symbol) {
+                WithContext context;
+                context.withVariable = varName;
+                context.recordType = symbol->getDataType();
+                
+                // For CUSTOM types, we need to find the record type name
+                if (context.recordType == DataType::CUSTOM) {
+                    context.recordTypeName = symbol->getTypeName();
+                }
+                
+                withContextStack_.push_back(context);
+            } else {
+                addError("Undefined with variable: " + varName);
+            }
+        }
+        // TODO: Handle more complex with expressions like field access
+    }
+    
+    // Check the body statement with the with context active
+    node.getBody()->accept(*this);
+    
+    // Remove with contexts when exiting
+    for (size_t i = 0; i < node.getWithExpressions().size(); ++i) {
+        if (!withContextStack_.empty()) {
+            withContextStack_.pop_back();
+        }
     }
 }
 
@@ -584,7 +660,7 @@ void SemanticAnalyzer::checkFunctionCall(CallExpression& node) {
         DataType actualType = getExpressionType(actualArgs[i].get());
         DataType expectedType = expectedParams[i].second;
         
-        if (!areTypesCompatible(expectedType, actualType)) {
+        if (!areArgumentTypesCompatible(expectedType, actualType, actualArgs[i].get())) {
             addError("Argument " + std::to_string(i + 1) + " type mismatch: expected " +
                     SymbolTable::dataTypeToString(expectedType) + ", got " +
                     SymbolTable::dataTypeToString(actualType));
@@ -606,6 +682,15 @@ void SemanticAnalyzer::checkAssignment(Expression* target, Expression* value) {
         // Simple variable assignment
         targetSymbol = symbolTable_->lookup(targetId->getName());
         if (!targetSymbol) {
+            // Check if this is a with field access
+            if (targetId->isWithFieldAccess()) {
+                // Allow assignment to with fields - assume they're valid
+                // The with field resolution was already done in identifier resolution
+                // Skip further validation for now
+                value->accept(*this);
+                return;
+            }
+            
             addError("Undefined variable: " + targetId->getName());
             return;
         }
@@ -654,6 +739,13 @@ void SemanticAnalyzer::checkAssignment(Expression* target, Expression* value) {
                     }
                 }
             }
+            // Check if it's a bounded string type
+            else if (definition.find("string[") != std::string::npos) {
+                // Bounded string - compatible with string
+                if (valueType == DataType::STRING) {
+                    return; // Compatible
+                }
+            }
             // Check if it's an enumeration type
             else if (definition.length() > 2 && definition[0] == '(' && definition.back() == ')') {
                 // Enumeration type - check if value is an enum constant
@@ -678,6 +770,184 @@ void SemanticAnalyzer::checkAssignment(Expression* target, Expression* value) {
                 SymbolTable::dataTypeToString(valueType) + " to " +
                 SymbolTable::dataTypeToString(targetType));
     }
+}
+
+bool SemanticAnalyzer::isBoundedStringType(DataType type) {
+    // This is a simplified check - we'll assume CUSTOM types in string contexts are bounded strings
+    // A more thorough implementation would track the actual type definitions
+    return type == DataType::CUSTOM;
+}
+
+bool SemanticAnalyzer::areArgumentTypesCompatible(DataType expectedType, DataType actualType, Expression* actualExpr) {
+    // First try normal type compatibility
+    if (areTypesCompatible(expectedType, actualType)) {
+        return true;
+    }
+    
+    // Special case: string parameter can accept bounded string (CUSTOM type)
+    if (expectedType == DataType::STRING && actualType == DataType::CUSTOM) {
+        // Check if the actual expression is a bounded string type
+        if (auto identExpr = dynamic_cast<IdentifierExpression*>(actualExpr)) {
+            auto symbol = symbolTable_->lookup(identExpr->getName());
+            if (symbol) {
+                std::string typeName = symbol->getTypeName();
+                auto typeSymbol = symbolTable_->lookup(typeName);
+                if (typeSymbol && typeSymbol->getSymbolType() == SymbolType::TYPE_DEF) {
+                    std::string definition = typeSymbol->getTypeDefinition();
+                    // Check if it's a bounded string type
+                    if (definition.find("string[") != std::string::npos) {
+                        return true; // Bounded string is compatible with string parameter
+                    }
+                }
+            }
+        }
+    }
+    
+    return false;
+}
+
+bool SemanticAnalyzer::isFieldInRecordDefinition(const std::string& fieldName, const std::string& recordDef) {
+    // Parse record definition like "record name: string; age: integer; address: string; end"
+    std::string def = recordDef;
+    
+    // Remove "record" and "end" keywords
+    size_t recordPos = def.find("record");
+    if (recordPos != std::string::npos) {
+        def = def.substr(recordPos + 6); // Skip "record"
+    }
+    
+    size_t endPos = def.find("end");
+    if (endPos != std::string::npos) {
+        def = def.substr(0, endPos);
+    }
+    
+    // Split by semicolons to get field definitions
+    size_t pos = 0;
+    while (pos < def.length()) {
+        size_t semicolonPos = def.find(';', pos);
+        if (semicolonPos == std::string::npos) {
+            semicolonPos = def.length();
+        }
+        
+        std::string fieldDef = def.substr(pos, semicolonPos - pos);
+        
+        // Trim whitespace
+        size_t start = fieldDef.find_first_not_of(" \t\n\r");
+        size_t end = fieldDef.find_last_not_of(" \t\n\r");
+        if (start != std::string::npos && end != std::string::npos) {
+            fieldDef = fieldDef.substr(start, end - start + 1);
+            
+            // Parse field definition like "name: string" or "x, y: integer"
+            size_t colonPos = fieldDef.find(':');
+            if (colonPos != std::string::npos) {
+                std::string fieldNames = fieldDef.substr(0, colonPos);
+                
+                // Check if our field name is in the list
+                size_t namePos = 0;
+                while (namePos < fieldNames.length()) {
+                    size_t commaPos = fieldNames.find(',', namePos);
+                    if (commaPos == std::string::npos) {
+                        commaPos = fieldNames.length();
+                    }
+                    
+                    std::string name = fieldNames.substr(namePos, commaPos - namePos);
+                    
+                    // Trim whitespace
+                    size_t nameStart = name.find_first_not_of(" \t\n\r");
+                    size_t nameEnd = name.find_last_not_of(" \t\n\r");
+                    if (nameStart != std::string::npos && nameEnd != std::string::npos) {
+                        name = name.substr(nameStart, nameEnd - nameStart + 1);
+                        
+                        if (name == fieldName) {
+                            return true;
+                        }
+                    }
+                    
+                    namePos = commaPos + 1;
+                }
+            }
+        }
+        
+        pos = semicolonPos + 1;
+    }
+    
+    return false;
+}
+
+std::string SemanticAnalyzer::getFieldTypeFromRecord(const std::string& fieldName, const std::string& recordDef) {
+    // Parse record definition like "record name: string; age: integer; address: string; end"
+    std::string def = recordDef;
+    
+    // Remove "record" and "end" keywords
+    size_t recordPos = def.find("record");
+    if (recordPos != std::string::npos) {
+        def = def.substr(recordPos + 6); // Skip "record"
+    }
+    
+    size_t endPos = def.find("end");
+    if (endPos != std::string::npos) {
+        def = def.substr(0, endPos);
+    }
+    
+    // Split by semicolons to get field definitions
+    size_t pos = 0;
+    while (pos < def.length()) {
+        size_t semicolonPos = def.find(';', pos);
+        if (semicolonPos == std::string::npos) {
+            semicolonPos = def.length();
+        }
+        
+        std::string fieldDef = def.substr(pos, semicolonPos - pos);
+        
+        // Trim whitespace
+        size_t start = fieldDef.find_first_not_of(" \t\n\r");
+        size_t end = fieldDef.find_last_not_of(" \t\n\r");
+        if (start != std::string::npos && end != std::string::npos) {
+            fieldDef = fieldDef.substr(start, end - start + 1);
+            
+            // Parse field definition like "name: string" or "x, y: integer"
+            size_t colonPos = fieldDef.find(':');
+            if (colonPos != std::string::npos) {
+                std::string fieldNames = fieldDef.substr(0, colonPos);
+                std::string fieldType = fieldDef.substr(colonPos + 1);
+                
+                // Trim the type
+                size_t typeStart = fieldType.find_first_not_of(" \t\n\r");
+                size_t typeEnd = fieldType.find_last_not_of(" \t\n\r");
+                if (typeStart != std::string::npos && typeEnd != std::string::npos) {
+                    fieldType = fieldType.substr(typeStart, typeEnd - typeStart + 1);
+                }
+                
+                // Check if our field name is in the list
+                size_t namePos = 0;
+                while (namePos < fieldNames.length()) {
+                    size_t commaPos = fieldNames.find(',', namePos);
+                    if (commaPos == std::string::npos) {
+                        commaPos = fieldNames.length();
+                    }
+                    
+                    std::string name = fieldNames.substr(namePos, commaPos - namePos);
+                    
+                    // Trim whitespace
+                    size_t nameStart = name.find_first_not_of(" \t\n\r");
+                    size_t nameEnd = name.find_last_not_of(" \t\n\r");
+                    if (nameStart != std::string::npos && nameEnd != std::string::npos) {
+                        name = name.substr(nameStart, nameEnd - nameStart + 1);
+                        
+                        if (name == fieldName) {
+                            return fieldType;
+                        }
+                    }
+                    
+                    namePos = commaPos + 1;
+                }
+            }
+        }
+        
+        pos = semicolonPos + 1;
+    }
+    
+    return ""; // Field not found
 }
 
 } // namespace rpascal

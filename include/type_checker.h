@@ -41,6 +41,7 @@ public:
     void visit(ForStatement& node) override;
     void visit(RepeatStatement& node) override;
     void visit(CaseStatement& node) override;
+    void visit(WithStatement& node) override;
     
     void visit(ConstantDeclaration& node) override;
     void visit(TypeDefinition& node) override;
@@ -56,15 +57,27 @@ private:
     DataType currentExpressionType_;
     std::string currentFunctionName_; // For return value checking
     
+    // With statement context tracking
+    struct WithContext {
+        std::string withVariable;    // Name of the with variable (e.g., "person")
+        std::string recordTypeName;  // Name of the record type
+        DataType recordType;         // Type of the with variable
+    };
+    std::vector<WithContext> withContextStack_;
+    
     // Helper methods
     void addError(const std::string& message);
     DataType getExpressionType(Expression* expr);
     bool areTypesCompatible(DataType left, DataType right);
+    bool areArgumentTypesCompatible(DataType expectedType, DataType actualType, Expression* actualExpr);
+    bool isBoundedStringType(DataType type);
     DataType getResultType(DataType left, DataType right, TokenType operator_);
     bool isValidUnaryOperation(DataType operandType, TokenType operator_);
     bool isValidBinaryOperation(DataType leftType, DataType rightType, TokenType operator_);
     void checkFunctionCall(CallExpression& node);
     void checkAssignment(Expression* target, Expression* value);
+    bool isFieldInRecordDefinition(const std::string& fieldName, const std::string& recordDef);
+    std::string getFieldTypeFromRecord(const std::string& fieldName, const std::string& recordDef);
 };
 
 } // namespace rpascal

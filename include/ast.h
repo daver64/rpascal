@@ -61,8 +61,14 @@ public:
     
     const std::string& getName() const { return name_; }
     
+    // With statement support
+    void setWithVariable(const std::string& withVar) { withVariable_ = withVar; }
+    const std::string& getWithVariable() const { return withVariable_; }
+    bool isWithFieldAccess() const { return !withVariable_.empty(); }
+    
 private:
     std::string name_;
+    std::string withVariable_; // If set, this identifier is a field of this with variable
 };
 
 class BinaryExpression : public Expression {
@@ -324,6 +330,23 @@ private:
     std::unique_ptr<Statement> elseClause_;
 };
 
+class WithStatement : public Statement {
+public:
+    WithStatement(std::vector<std::unique_ptr<Expression>> withExpressions, 
+                 std::unique_ptr<Statement> body)
+        : withExpressions_(std::move(withExpressions)), body_(std::move(body)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::vector<std::unique_ptr<Expression>>& getWithExpressions() const { return withExpressions_; }
+    Statement* getBody() const { return body_.get(); }
+    
+private:
+    std::vector<std::unique_ptr<Expression>> withExpressions_;
+    std::unique_ptr<Statement> body_;
+};
+
 // Array Type representation
 class ArrayType {
 public:
@@ -491,6 +514,7 @@ public:
     virtual void visit(ForStatement& node) = 0;
     virtual void visit(RepeatStatement& node) = 0;
     virtual void visit(CaseStatement& node) = 0;
+    virtual void visit(WithStatement& node) = 0;
     
     virtual void visit(ConstantDeclaration& node) = 0;
     virtual void visit(TypeDefinition& node) = 0;

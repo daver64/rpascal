@@ -49,6 +49,12 @@ void CppGenerator::visit(LiteralExpression& node) {
 void CppGenerator::visit(IdentifierExpression& node) {
     std::string name = node.getName();
     
+    // Check if this is a with field access
+    if (node.isWithFieldAccess()) {
+        emit(node.getWithVariable() + "." + name);
+        return;
+    }
+    
     // Check if this is a procedure call without parentheses
     if (symbolTable_) {
         auto symbol = symbolTable_->lookup(name);
@@ -375,6 +381,30 @@ void CppGenerator::visit(CaseStatement& node) {
     emitLine("}");
 }
 
+void CppGenerator::visit(WithStatement& node) {
+    // Generate nested scopes with reference aliases for each with expression
+    // Example: with point, person.address do x := 10;
+    // Becomes: { auto& __with_0 = point; { auto& __with_1 = person.address; x = 10; } }
+    
+    for (size_t i = 0; i < node.getWithExpressions().size(); ++i) {
+        emitIndent();
+        emit("{ auto& __with_" + std::to_string(i) + " = ");
+        node.getWithExpressions()[i]->accept(*this);
+        emitLine(";");
+        increaseIndent();
+    }
+    
+    // Generate the body
+    node.getBody()->accept(*this);
+    
+    // Close all scopes
+    for (size_t i = 0; i < node.getWithExpressions().size(); ++i) {
+        decreaseIndent();
+        emitIndent();
+        emitLine("}");
+    }
+}
+
 void CppGenerator::visit(ConstantDeclaration& node) {
     emitIndent();
     emit("const auto " + node.getName() + " = ");
@@ -401,6 +431,10 @@ void CppGenerator::visit(TypeDefinition& node) {
     else if (definition.find("set of") != std::string::npos) {
         generateSetDefinition(node.getName(), definition);
     } 
+    // Handle bounded string types
+    else if (definition.find("string[") != std::string::npos) {
+        generateBoundedStringDefinition(node.getName(), definition);
+    }
     // Handle range types  
     else if (definition.find("..") != std::string::npos) {
         generateRangeDefinition(node.getName(), definition);
@@ -970,6 +1004,74 @@ void CppGenerator::generateRangeDefinition(const std::string& typeName, const st
         // Malformed range definition
         emitLine("// Range definition: " + typeName + " = " + definition);
         emitLine("using " + typeName + " = int; // TODO: implement proper range type");
+    }
+    emitLine("");
+}
+
+void CppGenerator::generateBoundedStringDefinition(const std::string& typeName, const std::string& definition) {
+    // Parse bounded string definition: "string[10]" -> "using TShortString = BoundedString<10>;"
+    
+    size_t bracketPos = definition.find("[");
+    size_t endBracketPos = definition.find("]");
+    
+    if (bracketPos != std::string::npos && endBracketPos != std::string::npos) {
+        std::string sizeStr = definition.substr(bracketPos + 1, endBracketPos - bracketPos - 1);
+        
+        // Trim whitespace
+        sizeStr.erase(0, sizeStr.find_first_not_of(" \t\n\r"));
+        sizeStr.erase(sizeStr.find_last_not_of(" \t\n\r") + 1);
+        
+        try {
+            int size = std::stoi(sizeStr);
+            
+            emitLine("// Bounded string: " + typeName + " = " + definition);
+            emitLine("class " + typeName + " {");
+            increaseIndent();
+            emitLine("private:");
+            increaseIndent();
+            emitLine("std::string data_;");
+            emitLine("static const size_t MAX_LENGTH = " + std::to_string(size) + ";");
+            decreaseIndent();
+            emitLine("public:");
+            increaseIndent();
+            emitLine(typeName + "() = default;");
+            emitLine(typeName + "(const std::string& s) : data_(s.length() > MAX_LENGTH ? s.substr(0, MAX_LENGTH) : s) {}");
+            emitLine(typeName + "(const char* s) : data_(std::string(s).length() > MAX_LENGTH ? std::string(s).substr(0, MAX_LENGTH) : std::string(s)) {}");
+            emitLine("");
+            emitLine("operator std::string() const { return data_; }");
+            emitLine("const std::string& str() const { return data_; }");
+            emitLine("size_t length() const { return data_.length(); }");
+            emitLine("");
+            emitLine(typeName + "& operator=(const std::string& s) {");
+            increaseIndent();
+            emitLine("data_ = s.length() > MAX_LENGTH ? s.substr(0, MAX_LENGTH) : s;");
+            emitLine("return *this;");
+            decreaseIndent();
+            emitLine("}");
+            emitLine("");
+            emitLine(typeName + "& operator=(const char* s) {");
+            increaseIndent();
+            emitLine("return *this = std::string(s);");
+            decreaseIndent();
+            emitLine("}");
+            decreaseIndent();
+            emitLine("};");
+            emitLine("");
+            emitLine("// Stream output operator for " + typeName);
+            emitLine("inline std::ostream& operator<<(std::ostream& os, const " + typeName + "& obj) {");
+            increaseIndent();
+            emitLine("return os << obj.str();");
+            decreaseIndent();
+            emitLine("}");
+        } catch (const std::exception&) {
+            // Fallback for non-numeric sizes
+            emitLine("// Bounded string definition: " + typeName + " = " + definition);
+            emitLine("using " + typeName + " = std::string; // TODO: implement proper bounded string");
+        }
+    } else {
+        // Malformed bounded string definition
+        emitLine("// Bounded string definition: " + typeName + " = " + definition);
+        emitLine("using " + typeName + " = std::string; // TODO: implement proper bounded string");
     }
     emitLine("");
 }

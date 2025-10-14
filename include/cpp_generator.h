@@ -36,6 +36,7 @@ public:
     void visit(ForStatement& node) override;
     void visit(RepeatStatement& node) override;
     void visit(CaseStatement& node) override;
+    void visit(WithStatement& node) override;
     
     void visit(ConstantDeclaration& node) override;
     void visit(TypeDefinition& node) override;
@@ -95,6 +96,7 @@ private:
     void generateRecordDefinition(const std::string& typeName, const std::string& definition);
     void generateArrayDefinition(const std::string& typeName, const std::string& definition);
     void generateSetDefinition(const std::string& typeName, const std::string& definition);
+    void generateBoundedStringDefinition(const std::string& typeName, const std::string& definition);
     void generateRangeDefinition(const std::string& typeName, const std::string& definition);
     void generateEnumDefinition(const std::string& typeName, const std::string& definition);
     
