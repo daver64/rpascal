@@ -97,6 +97,18 @@ void CppGenerator::visit(UnaryExpression& node) {
     emit(")");
 }
 
+void CppGenerator::visit(AddressOfExpression& node) {
+    emit("&(");
+    node.getOperand()->accept(*this);
+    emit(")");
+}
+
+void CppGenerator::visit(DereferenceExpression& node) {
+    emit("*(");
+    node.getOperand()->accept(*this);
+    emit(")");
+}
+
 void CppGenerator::visit(CallExpression& node) {
     generateFunctionCall(node);
 }
@@ -634,6 +646,12 @@ std::string CppGenerator::mapPascalTypeToCpp(const std::string& pascalType) {
     std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(), 
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     
+    // Handle pointer types: ^Type -> Type*
+    if (!lowerType.empty() && lowerType[0] == '^') {
+        std::string pointeeType = lowerType.substr(1);
+        return mapPascalTypeToCpp(pointeeType) + "*";
+    }
+    
     if (lowerType == "integer") return "int32_t";
     if (lowerType == "real") return "double";
     if (lowerType == "boolean") return "bool";
@@ -714,6 +732,73 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
             node.getArguments()[0]->accept(*this);
         }
         emit(")");
+    } else if (functionName == "pos") {
+        // pos(substr, str) -> str.find(substr) + 1 (Pascal is 1-indexed)
+        emit("(");
+        if (node.getArguments().size() >= 2) {
+            node.getArguments()[1]->accept(*this); // str
+            emit(".find(");
+            node.getArguments()[0]->accept(*this); // substr
+            emit(") != std::string::npos ? ");
+            node.getArguments()[1]->accept(*this); // str
+            emit(".find(");
+            node.getArguments()[0]->accept(*this); // substr
+            emit(") + 1 : 0)");
+        }
+    } else if (functionName == "copy") {
+        // copy(str, start, length) -> str.substr(start-1, length)
+        emit("(");
+        if (node.getArguments().size() >= 3) {
+            node.getArguments()[0]->accept(*this); // str
+            emit(".substr(");
+            node.getArguments()[1]->accept(*this); // start
+            emit(" - 1, ");
+            node.getArguments()[2]->accept(*this); // length
+            emit(")");
+        } else if (node.getArguments().size() >= 2) {
+            node.getArguments()[0]->accept(*this); // str
+            emit(".substr(");
+            node.getArguments()[1]->accept(*this); // start
+            emit(" - 1)");
+        }
+        emit(")");
+    } else if (functionName == "concat") {
+        // concat(str1, str2, ...) -> str1 + str2 + ...
+        emit("(");
+        for (size_t i = 0; i < node.getArguments().size(); ++i) {
+            if (i > 0) emit(" + ");
+            node.getArguments()[i]->accept(*this);
+        }
+        emit(")");
+    } else if (functionName == "insert") {
+        // insert(substr, str, pos) - For now, we'll treat this as an expression
+        // Note: Pascal's insert modifies the string in place, but this is complex to handle
+        // For testing purposes, we'll generate a placeholder
+        emit("/* Pascal insert() not fully supported yet */ (");
+        if (node.getArguments().size() >= 3) {
+            node.getArguments()[1]->accept(*this); // str
+            emit(".insert(");
+            node.getArguments()[2]->accept(*this); // pos
+            emit(" - 1, ");
+            node.getArguments()[0]->accept(*this); // substr
+            emit("), ");
+            node.getArguments()[1]->accept(*this); // return the modified string
+        }
+        emit(")");
+    } else if (functionName == "delete") {
+        // delete(str, pos, length) - For now, we'll treat this as an expression
+        // Note: Pascal's delete modifies the string in place
+        emit("/* Pascal delete() not fully supported yet */ (");
+        if (node.getArguments().size() >= 3) {
+            node.getArguments()[0]->accept(*this); // str
+            emit(".erase(");
+            node.getArguments()[1]->accept(*this); // pos
+            emit(" - 1, ");
+            node.getArguments()[2]->accept(*this); // length
+            emit("), ");
+            node.getArguments()[0]->accept(*this); // return the modified string
+        }
+        emit(")");
     } else {
         // Default function call
         emit(functionName + "(");
@@ -744,7 +829,25 @@ std::string CppGenerator::generateParameterList(const std::vector<std::unique_pt
     
     for (size_t i = 0; i < parameters.size(); ++i) {
         if (i > 0) params << ", ";
-        params << mapPascalTypeToCpp(parameters[i]->getType()) << " " << parameters[i]->getName();
+        
+        std::string cppType = mapPascalTypeToCpp(parameters[i]->getType());
+        
+        // Handle parameter modes
+        switch (parameters[i]->getParameterMode()) {
+            case ParameterMode::VAR:
+                // var parameters are passed by reference
+                params << cppType << "& " << parameters[i]->getName();
+                break;
+            case ParameterMode::CONST:
+                // const parameters are passed by const reference for efficiency
+                params << "const " << cppType << "& " << parameters[i]->getName();
+                break;
+            case ParameterMode::VALUE:
+            default:
+                // value parameters are passed by value
+                params << cppType << " " << parameters[i]->getName();
+                break;
+        }
     }
     
     return params.str();
@@ -752,7 +855,8 @@ std::string CppGenerator::generateParameterList(const std::vector<std::unique_pt
 
 bool CppGenerator::isBuiltinFunction(const std::string& name) {
     return name == "writeln" || name == "readln" || name == "length" || 
-           name == "chr" || name == "ord";
+           name == "chr" || name == "ord" || name == "pos" || name == "copy" ||
+           name == "concat" || name == "insert" || name == "delete";
 }
 
 std::string CppGenerator::escapeCppString(const std::string& str) {

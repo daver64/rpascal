@@ -10,6 +10,13 @@ namespace rpascal {
 // Forward declarations
 class ASTVisitor;
 
+// Parameter passing modes
+enum class ParameterMode {
+    VALUE,      // Normal parameter (by value)
+    VAR,        // var parameter (by reference)
+    CONST       // const parameter (by const reference)
+};
+
 // Base AST Node
 class ASTNode {
 public:
@@ -102,6 +109,34 @@ public:
     
 private:
     Token operator_;
+    std::unique_ptr<Expression> operand_;
+};
+
+class AddressOfExpression : public Expression {
+public:
+    explicit AddressOfExpression(std::unique_ptr<Expression> operand)
+        : operand_(std::move(operand)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    Expression* getOperand() const { return operand_.get(); }
+    
+private:
+    std::unique_ptr<Expression> operand_;
+};
+
+class DereferenceExpression : public Expression {
+public:
+    explicit DereferenceExpression(std::unique_ptr<Expression> operand)
+        : operand_(std::move(operand)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    Expression* getOperand() const { return operand_.get(); }
+    
+private:
     std::unique_ptr<Expression> operand_;
 };
 
@@ -405,8 +440,9 @@ private:
 class VariableDeclaration : public Declaration {
 public:
     VariableDeclaration(const std::string& name, const std::string& type, 
-                       std::unique_ptr<Expression> initializer = nullptr)
-        : name_(name), type_(type), initializer_(std::move(initializer)) {}
+                       std::unique_ptr<Expression> initializer = nullptr,
+                       ParameterMode paramMode = ParameterMode::VALUE)
+        : name_(name), type_(type), initializer_(std::move(initializer)), parameterMode_(paramMode) {}
     
     void accept(ASTVisitor& visitor) override;
     std::string toString() const override;
@@ -414,11 +450,14 @@ public:
     const std::string& getName() const { return name_; }
     const std::string& getType() const { return type_; }
     Expression* getInitializer() const { return initializer_.get(); }
+    ParameterMode getParameterMode() const { return parameterMode_; }
+    void setParameterMode(ParameterMode mode) { parameterMode_ = mode; }
     
 private:
     std::string name_;
     std::string type_;
     std::unique_ptr<Expression> initializer_;
+    ParameterMode parameterMode_;
 };
 
 class ProcedureDeclaration : public Declaration {
@@ -501,6 +540,8 @@ public:
     virtual void visit(IdentifierExpression& node) = 0;
     virtual void visit(BinaryExpression& node) = 0;
     virtual void visit(UnaryExpression& node) = 0;
+    virtual void visit(AddressOfExpression& node) = 0;
+    virtual void visit(DereferenceExpression& node) = 0;
     virtual void visit(CallExpression& node) = 0;
     virtual void visit(FieldAccessExpression& node) = 0;
     virtual void visit(ArrayIndexExpression& node) = 0;

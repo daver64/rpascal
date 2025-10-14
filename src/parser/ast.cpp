@@ -40,6 +40,24 @@ std::string UnaryExpression::toString() const {
     return "UnaryExpression(" + operator_.getValue() + " " + operand_->toString() + ")";
 }
 
+// AddressOfExpression
+void AddressOfExpression::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string AddressOfExpression::toString() const {
+    return "AddressOfExpression(@" + operand_->toString() + ")";
+}
+
+// DereferenceExpression
+void DereferenceExpression::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string DereferenceExpression::toString() const {
+    return "DereferenceExpression(^" + operand_->toString() + ")";
+}
+
 // CallExpression
 void CallExpression::accept(ASTVisitor& visitor) {
     visitor.visit(*this);

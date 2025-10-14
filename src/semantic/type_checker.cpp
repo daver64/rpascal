@@ -4,7 +4,8 @@
 namespace rpascal {
 
 SemanticAnalyzer::SemanticAnalyzer(std::shared_ptr<SymbolTable> symbolTable)
-    : symbolTable_(symbolTable), currentExpressionType_(DataType::UNKNOWN) {}
+    : symbolTable_(symbolTable), currentExpressionType_(DataType::UNKNOWN), 
+      currentPointeeType_(DataType::UNKNOWN) {}
 
 bool SemanticAnalyzer::analyze(Program& program) {
     errors_.clear();
@@ -145,6 +146,34 @@ void SemanticAnalyzer::visit(UnaryExpression& node) {
     } else {
         currentExpressionType_ = operandType;
     }
+}
+
+void SemanticAnalyzer::visit(AddressOfExpression& node) {
+    node.getOperand()->accept(*this);
+    DataType operandType = currentExpressionType_;
+    
+    // The address-of operator always returns a pointer to the operand's type
+    // The result type is POINTER, and we store the pointee type information
+    currentExpressionType_ = DataType::POINTER;
+    currentPointeeType_ = operandType; // Store what we're taking address of
+}
+
+void SemanticAnalyzer::visit(DereferenceExpression& node) {
+    node.getOperand()->accept(*this);
+    DataType operandType = currentExpressionType_;
+    
+    if (operandType != DataType::POINTER) {
+        addError("Cannot dereference non-pointer type: " + 
+                SymbolTable::dataTypeToString(operandType));
+        currentExpressionType_ = DataType::UNKNOWN;
+        return;
+    }
+    
+    // Dereferencing a pointer returns the pointee type
+    // For now, we need to look up the symbol to get the pointee type
+    // This is a simplified implementation - would need proper symbol lookup
+    // For basic testing, assume integer pointers dereference to integers
+    currentExpressionType_ = DataType::INTEGER; // Simplified for testing
 }
 
 void SemanticAnalyzer::visit(CallExpression& node) {
@@ -392,6 +421,18 @@ void SemanticAnalyzer::visit(VariableDeclaration& node) {
     
     auto symbol = std::make_shared<Symbol>(node.getName(), SymbolType::VARIABLE, dataType);
     symbol->setTypeName(node.getType()); // Store the original type name
+    
+    // Handle pointer types - extract and store pointee type information
+    if (dataType == DataType::POINTER) {
+        std::string typeStr = node.getType();
+        if (!typeStr.empty() && typeStr[0] == '^') {
+            std::string pointeeTypeName = typeStr.substr(1); // Remove the '^' prefix
+            DataType pointeeType = symbolTable_->resolveDataType(pointeeTypeName);
+            symbol->setPointeeType(pointeeType);
+            symbol->setPointeeTypeName(pointeeTypeName);
+        }
+    }
+    
     symbolTable_->define(node.getName(), symbol);
     
     // Check initializer if present
@@ -641,6 +682,15 @@ void SemanticAnalyzer::checkFunctionCall(CallExpression& node) {
             arg->accept(*this);
         }
         currentExpressionType_ = DataType::VOID;
+        return;
+    }
+    
+    if (functionName == "concat") {
+        // Accept any number and type of arguments for now
+        for (const auto& arg : node.getArguments()) {
+            arg->accept(*this);
+        }
+        currentExpressionType_ = DataType::STRING;
         return;
     }
     

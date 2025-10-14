@@ -121,6 +121,11 @@ DataType SymbolTable::stringToDataType(const std::string& typeStr) {
     std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(), 
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     
+    // Handle pointer types: ^TypeName
+    if (!lowerType.empty() && lowerType[0] == '^') {
+        return DataType::POINTER;
+    }
+    
     if (lowerType == "integer") return DataType::INTEGER;
     if (lowerType == "real") return DataType::REAL;
     if (lowerType == "boolean") return DataType::BOOLEAN;
@@ -156,6 +161,7 @@ std::string SymbolTable::dataTypeToString(DataType type) {
         case DataType::STRING: return "string";
         case DataType::VOID: return "void";
         case DataType::CUSTOM: return "custom";
+        case DataType::POINTER: return "pointer";
         case DataType::UNKNOWN: return "unknown";
         default: return "unknown";
     }
@@ -170,6 +176,7 @@ std::string SymbolTable::dataTypeToCppType(DataType type) {
         case DataType::STRING: return "std::string";
         case DataType::VOID: return "void";
         case DataType::CUSTOM: return "auto";  // For now, let C++ compiler deduce custom types
+        case DataType::POINTER: return "void*";  // Generic pointer for now
         case DataType::UNKNOWN: return "auto";
         default: return "auto";
     }
@@ -222,6 +229,40 @@ void SymbolTable::initializeBuiltinSymbols() {
     ord->addParameter("c", DataType::CHAR);
     ord->setReturnType(DataType::INTEGER);
     define("ord", ord);
+    
+    // Additional string functions
+    auto pos = std::make_shared<Symbol>("pos", SymbolType::FUNCTION, DataType::INTEGER, 0);
+    pos->addParameter("substr", DataType::STRING);
+    pos->addParameter("str", DataType::STRING);
+    pos->setReturnType(DataType::INTEGER);
+    define("pos", pos);
+    
+    auto copy = std::make_shared<Symbol>("copy", SymbolType::FUNCTION, DataType::STRING, 0);
+    copy->addParameter("str", DataType::STRING);
+    copy->addParameter("start", DataType::INTEGER);
+    copy->addParameter("length", DataType::INTEGER);
+    copy->setReturnType(DataType::STRING);
+    define("copy", copy);
+    
+    auto concat = std::make_shared<Symbol>("concat", SymbolType::FUNCTION, DataType::STRING, 0);
+    // concat can take variable arguments, add a few generic parameters
+    concat->addParameter("str1", DataType::STRING);
+    concat->addParameter("str2", DataType::STRING);
+    concat->addParameter("str3", DataType::STRING); // optional
+    concat->setReturnType(DataType::STRING);
+    define("concat", concat);
+    
+    auto insert = std::make_shared<Symbol>("insert", SymbolType::PROCEDURE, DataType::VOID, 0);
+    insert->addParameter("substr", DataType::STRING);
+    insert->addParameter("str", DataType::STRING); // this would be var parameter in reality
+    insert->addParameter("pos", DataType::INTEGER);
+    define("insert", insert);
+    
+    auto deleteFunc = std::make_shared<Symbol>("delete", SymbolType::PROCEDURE, DataType::VOID, 0);
+    deleteFunc->addParameter("str", DataType::STRING); // this would be var parameter in reality
+    deleteFunc->addParameter("pos", DataType::INTEGER);
+    deleteFunc->addParameter("length", DataType::INTEGER);
+    define("delete", deleteFunc);
 }
 
 } // namespace rpascal

@@ -586,6 +586,12 @@ std::unique_ptr<Expression> Parser::parseUnaryExpression() {
         return std::make_unique<UnaryExpression>(op, std::move(operand));
     }
     
+    if (check(TokenType::AT)) {
+        advance(); // consume '@'
+        auto operand = parseUnaryExpression();
+        return std::make_unique<AddressOfExpression>(std::move(operand));
+    }
+    
     return parsePrimaryExpression();
 }
 
@@ -631,6 +637,10 @@ std::unique_ptr<Expression> Parser::parsePrimaryExpression() {
                 
                 consume(TokenType::RIGHT_BRACKET, "Expected ']' after array index");
                 expr = std::make_unique<ArrayIndexExpression>(std::move(expr), std::move(indices));
+            } else if (check(TokenType::CARET)) {
+                // Pointer dereference (postfix)
+                advance(); // consume '^'
+                expr = std::make_unique<DereferenceExpression>(std::move(expr));
             } else {
                 break; // No more postfix operations
             }
@@ -674,6 +684,13 @@ std::unique_ptr<Expression> Parser::parseCallExpression(std::unique_ptr<Expressi
 }
 
 std::string Parser::parseTypeName() {
+    // Handle pointer types: ^Type
+    if (check(TokenType::CARET)) {
+        advance(); // consume '^'
+        std::string pointeeType = parseTypeName(); // recursive call for the pointed-to type
+        return "^" + pointeeType;
+    }
+    
     // Accept both IDENTIFIER and type keywords as type names
     if (check(TokenType::IDENTIFIER) || 
         check(TokenType::INTEGER) || check(TokenType::REAL) || 
@@ -810,10 +827,12 @@ std::vector<std::unique_ptr<VariableDeclaration>> Parser::parseParameterList() {
     
     if (!check(TokenType::RIGHT_PAREN)) {
         do {
-            // Check for optional 'var' keyword (pass by reference)
-            bool isVarParameter = false;
+            // Check for parameter mode: var, const, or value (default)
+            ParameterMode paramMode = ParameterMode::VALUE;
             if (match(TokenType::VAR)) {
-                isVarParameter = true;
+                paramMode = ParameterMode::VAR;
+            } else if (match(TokenType::CONST)) {
+                paramMode = ParameterMode::CONST;
             }
             
             // Parse parameter names - Pascal allows multiple parameters of same type: a, b, c: integer
@@ -833,9 +852,9 @@ std::vector<std::unique_ptr<VariableDeclaration>> Parser::parseParameterList() {
             
             // Create a separate parameter declaration for each parameter name
             for (const auto& paramName : paramNames) {
-                // For now, we'll ignore the var keyword and treat all parameters the same
-                // TODO: Add proper support for reference parameters in the AST
-                parameters.push_back(std::make_unique<VariableDeclaration>(paramName, typeName));
+                auto param = std::make_unique<VariableDeclaration>(paramName, typeName);
+                param->setParameterMode(paramMode);
+                parameters.push_back(std::move(param));
             }
             
         } while (match(TokenType::SEMICOLON));

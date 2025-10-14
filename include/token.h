@@ -57,6 +57,7 @@ enum class TokenType {
     // Boolean literals
     TRUE,
     FALSE,
+    NIL,            // nil
     
     // Operators
     PLUS,           // +

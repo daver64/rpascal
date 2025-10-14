@@ -26,6 +26,7 @@ enum class DataType {
     STRING,
     VOID,
     CUSTOM,    // User-defined types (records, arrays, enums)
+    POINTER,   // Pointer types (^T)
     UNKNOWN
 };
 
@@ -48,6 +49,12 @@ public:
     void setTypeName(const std::string& typeName) { typeName_ = typeName; }
     const std::string& getTypeName() const { return typeName_; }
     
+    // For pointer types
+    void setPointeeType(DataType pointeeType) { pointeeType_ = pointeeType; }
+    DataType getPointeeType() const { return pointeeType_; }
+    void setPointeeTypeName(const std::string& pointeeName) { pointeeTypeName_ = pointeeName; }
+    const std::string& getPointeeTypeName() const { return pointeeTypeName_; }
+    
     // For functions and procedures
     void addParameter(const std::string& paramName, DataType paramType) {
         parameters_.push_back({paramName, paramType});
@@ -69,6 +76,8 @@ private:
     int scopeLevel_;
     std::string typeDefinition_;  // For custom types, stores the definition string
     std::string typeName_;        // For variables, stores the original type name  
+    DataType pointeeType_ = DataType::UNKNOWN;  // For pointer types, the pointed-to type
+    std::string pointeeTypeName_; // For pointer types, the pointed-to type name
     std::vector<std::pair<std::string, DataType>> parameters_;
     DataType returnType_ = DataType::VOID;
 };

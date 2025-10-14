@@ -28,6 +28,8 @@ public:
     void visit(IdentifierExpression& node) override;
     void visit(BinaryExpression& node) override;
     void visit(UnaryExpression& node) override;
+    void visit(AddressOfExpression& node) override;
+    void visit(DereferenceExpression& node) override;
     void visit(CallExpression& node) override;
     void visit(FieldAccessExpression& node) override;
     void visit(ArrayIndexExpression& node) override;
@@ -55,6 +57,7 @@ private:
     std::shared_ptr<SymbolTable> symbolTable_;
     std::vector<std::string> errors_;
     DataType currentExpressionType_;
+    DataType currentPointeeType_;
     std::string currentFunctionName_; // For return value checking
     
     // With statement context tracking
