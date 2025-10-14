@@ -221,6 +221,40 @@ void SemanticAnalyzer::visit(TypeDefinition& node) {
     auto symbol = std::make_shared<Symbol>(node.getName(), SymbolType::TYPE_DEF, DataType::CUSTOM);
     symbol->setTypeDefinition(node.getDefinition());
     symbolTable_->define(node.getName(), symbol);
+    
+    // Check if this is an enumeration type and register enum values
+    std::string definition = node.getDefinition();
+    if (definition.length() > 2 && definition[0] == '(' && definition.back() == ')') {
+        // This is an enumeration type like "(Red, Green, Blue)"
+        std::string enumValues = definition.substr(1, definition.length() - 2); // Remove parentheses
+        
+        // Parse individual enum values
+        size_t pos = 0;
+        int enumOrdinal = 0;
+        while (pos < enumValues.length()) {
+            // Find the next comma or end of string
+            size_t commaPos = enumValues.find(',', pos);
+            if (commaPos == std::string::npos) {
+                commaPos = enumValues.length();
+            }
+            
+            // Extract enum value name (trim whitespace)
+            std::string enumValue = enumValues.substr(pos, commaPos - pos);
+            size_t start = enumValue.find_first_not_of(" \t");
+            size_t end = enumValue.find_last_not_of(" \t");
+            if (start != std::string::npos && end != std::string::npos) {
+                enumValue = enumValue.substr(start, end - start + 1);
+                
+                // Register enum value as a constant
+                auto enumSymbol = std::make_shared<Symbol>(enumValue, SymbolType::CONSTANT, DataType::INTEGER);
+                enumSymbol->setTypeName(node.getName()); // Link back to enum type
+                symbolTable_->define(enumValue, enumSymbol);
+                enumOrdinal++;
+            }
+            
+            pos = commaPos + 1;
+        }
+    }
 }
 
 void SemanticAnalyzer::visit(VariableDeclaration& node) {
@@ -566,6 +600,22 @@ void SemanticAnalyzer::checkAssignment(Expression* target, Expression* value) {
                     // Numeric range - compatible with integer
                     if (valueType == DataType::INTEGER) {
                         return; // Compatible
+                    }
+                }
+            }
+            // Check if it's an enumeration type
+            else if (definition.length() > 2 && definition[0] == '(' && definition.back() == ')') {
+                // Enumeration type - check if value is an enum constant
+                if (valueType == DataType::INTEGER) {
+                    // The value might be an enum constant
+                    // For now, check if the value expression is an identifier that belongs to this enum
+                    auto valueId = dynamic_cast<IdentifierExpression*>(value);
+                    if (valueId) {
+                        auto valueSymbol = symbolTable_->lookup(valueId->getName());
+                        if (valueSymbol && valueSymbol->getSymbolType() == SymbolType::CONSTANT &&
+                            valueSymbol->getTypeName() == typeName) {
+                            return; // Compatible - enum constant assignment
+                        }
                     }
                 }
             }

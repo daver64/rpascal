@@ -192,8 +192,12 @@ void CppGenerator::visit(ConstantDeclaration& node) {
 void CppGenerator::visit(TypeDefinition& node) {
     const std::string& definition = node.getDefinition();
     
+    // Handle enumeration types
+    if (definition.length() > 2 && definition[0] == '(' && definition.back() == ')') {
+        generateEnumDefinition(node.getName(), definition);
+    }
     // Handle record types
-    if (definition.find("record") != std::string::npos) {
+    else if (definition.find("record") != std::string::npos) {
         generateRecordDefinition(node.getName(), definition);
     } 
     // Handle array types
@@ -205,7 +209,7 @@ void CppGenerator::visit(TypeDefinition& node) {
         generateRangeDefinition(node.getName(), definition);
     }
     else {
-        // For other types (enums), generate a comment for now
+        // For other types, generate a comment for now
         emitLine("// Type definition: " + node.getName() + " = " + definition);
         emitLine("using " + node.getName() + " = int; // TODO: implement proper type");
     }
@@ -690,6 +694,82 @@ void CppGenerator::generateRangeDefinition(const std::string& typeName, const st
         // Malformed range definition
         emitLine("// Range definition: " + typeName + " = " + definition);
         emitLine("using " + typeName + " = int; // TODO: implement proper range type");
+    }
+    emitLine("");
+}
+
+void CppGenerator::generateEnumDefinition(const std::string& typeName, const std::string& definition) {
+    // Parse enumeration definition: "(Red, Green, Blue)"
+    
+    if (definition.length() > 2 && definition[0] == '(' && definition.back() == ')') {
+        std::string enumValues = definition.substr(1, definition.length() - 2); // Remove parentheses
+        
+        emitLine("// Enumeration: " + typeName + " = " + definition);
+        emitLine("enum class " + typeName + " {");
+        increaseIndent();
+        
+        // Parse individual enum values
+        size_t pos = 0;
+        int enumOrdinal = 0;
+        bool firstValue = true;
+        
+        while (pos < enumValues.length()) {
+            // Find the next comma or end of string
+            size_t commaPos = enumValues.find(',', pos);
+            if (commaPos == std::string::npos) {
+                commaPos = enumValues.length();
+            }
+            
+            // Extract enum value name (trim whitespace)
+            std::string enumValue = enumValues.substr(pos, commaPos - pos);
+            size_t start = enumValue.find_first_not_of(" \t");
+            size_t end = enumValue.find_last_not_of(" \t");
+            if (start != std::string::npos && end != std::string::npos) {
+                enumValue = enumValue.substr(start, end - start + 1);
+                
+                if (!firstValue) {
+                    emit(",");
+                    emitLine("");
+                }
+                emitIndent();
+                emit(enumValue + " = " + std::to_string(enumOrdinal));
+                firstValue = false;
+                enumOrdinal++;
+            }
+            
+            pos = commaPos + 1;
+        }
+        
+        emitLine("");
+        decreaseIndent();
+        emitLine("};");
+        
+        // Generate constants for the enum values to use in Pascal code
+        emitLine("");
+        emitLine("// Enum value constants for Pascal compatibility");
+        pos = 0;
+        enumOrdinal = 0;
+        while (pos < enumValues.length()) {
+            size_t commaPos = enumValues.find(',', pos);
+            if (commaPos == std::string::npos) {
+                commaPos = enumValues.length();
+            }
+            
+            std::string enumValue = enumValues.substr(pos, commaPos - pos);
+            size_t start = enumValue.find_first_not_of(" \t");
+            size_t end = enumValue.find_last_not_of(" \t");
+            if (start != std::string::npos && end != std::string::npos) {
+                enumValue = enumValue.substr(start, end - start + 1);
+                emitLine("const " + typeName + " " + enumValue + " = " + typeName + "::" + enumValue + ";");
+                enumOrdinal++;
+            }
+            
+            pos = commaPos + 1;
+        }
+    } else {
+        // Malformed enum definition
+        emitLine("// Enum definition: " + typeName + " = " + definition);
+        emitLine("using " + typeName + " = int; // TODO: implement proper enum type");
     }
     emitLine("");
 }
