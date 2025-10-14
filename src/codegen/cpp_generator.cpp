@@ -64,6 +64,19 @@ void CppGenerator::visit(IdentifierExpression& node) {
 }
 
 void CppGenerator::visit(BinaryExpression& node) {
+    // Handle special operators
+    if (node.getOperator().getType() == TokenType::IN) {
+        // Pascal 'in' operator: element in set
+        // Use lambda to avoid duplicate set creation: [&](){ auto s = set; return s.find(element) != s.end(); }()
+        emit("([&](){ auto temp_set = ");
+        node.getRight()->accept(*this); // set
+        emit("; return temp_set.find(");
+        node.getLeft()->accept(*this);  // element
+        emit(") != temp_set.end(); })()");
+        return;
+    }
+    
+    // Standard binary operators
     emit("(");
     node.getLeft()->accept(*this);
     emit(" " + mapPascalOperatorToCpp(node.getOperator().getType()) + " ");
@@ -95,9 +108,6 @@ void CppGenerator::visit(ArrayIndexExpression& node) {
         arrayVarName = identifierExpr->getName();
     }
     
-    node.getArray()->accept(*this);
-    emit("[");
-    
     // Look up the variable's type from symbol table
     std::string arrayTypeName;
     if (!arrayVarName.empty() && symbolTable_) {
@@ -107,23 +117,122 @@ void CppGenerator::visit(ArrayIndexExpression& node) {
         }
     }
     
-    // Check if we have array type information for proper offset calculation
+    const std::vector<std::unique_ptr<Expression>>& indices = node.getIndices();
+    
+    // Check if we have array type information
     auto arrayTypeIt = arrayTypes_.find(arrayTypeName);
     if (arrayTypeIt != arrayTypes_.end()) {
         const ArrayTypeInfo& info = arrayTypeIt->second;
         
-        // Generate proper offset calculation
-        emit("(");
-        node.getIndex()->accept(*this);
-        emit(") - " + std::to_string(info.startIndex));
+        if (info.dimensions.size() > 1 && indices.size() == info.dimensions.size()) {
+            // Multi-dimensional array - use flattened index calculation
+            node.getArray()->accept(*this);
+            emit("[");
+            
+            // Calculate flattened index: index = (i1-start1)*size2*size3 + (i2-start2)*size3 + (i3-start3)
+            for (size_t i = 0; i < indices.size(); ++i) {
+                if (i > 0) emit(" + ");
+                
+                emit("(");
+                
+                // Handle enum indices differently
+                if (info.dimensions[i].isEnumRange) {
+                    emit("static_cast<int>(");
+                    indices[i]->accept(*this);
+                    emit(")");
+                } else {
+                    indices[i]->accept(*this);
+                    emit(" - " + std::to_string(info.dimensions[i].startIndex));
+                }
+                
+                emit(")");
+                
+                // Multiply by the size of all subsequent dimensions
+                for (size_t j = i + 1; j < info.dimensions.size(); ++j) {
+                    int dimSize;
+                    if (info.dimensions[j].isEnumRange) {
+                        auto enumIt = enumTypes_.find(info.dimensions[j].enumTypeName);
+                        dimSize = enumIt != enumTypes_.end() ? enumIt->second.size() : 1;
+                    } else {
+                        dimSize = info.dimensions[j].endIndex - info.dimensions[j].startIndex + 1;
+                    }
+                    emit(" * " + std::to_string(dimSize));
+                }
+            }
+            
+            emit("]");
+        } else if (indices.size() == 1) {
+            // Single dimension array
+            node.getArray()->accept(*this);
+            emit("[");
+            
+            if (!info.dimensions.empty()) {
+                if (info.dimensions[0].isEnumRange) {
+                    emit("static_cast<int>(");
+                    indices[0]->accept(*this);
+                    emit(")");
+                } else {
+                    emit("(");
+                    indices[0]->accept(*this);
+                    emit(") - " + std::to_string(info.dimensions[0].startIndex));
+                }
+            } else {
+                // Legacy single dimension support
+                emit("(");
+                indices[0]->accept(*this);
+                emit(") - " + std::to_string(info.startIndex));
+            }
+            
+            emit("]");
+        } else {
+            // Dimension mismatch - fallback
+            node.getArray()->accept(*this);
+            emit("[");
+            indices[0]->accept(*this);
+            emit(" - 1]");
+        }
     } else {
-        // Fallback to simple -1 offset for 1-based arrays
-        emit("(");
-        node.getIndex()->accept(*this);
-        emit(") - 1");
+        // No type information - use legacy behavior
+        node.getArray()->accept(*this);
+        emit("[");
+        
+        if (indices.size() == 1) {
+            emit("(");
+            indices[0]->accept(*this);
+            emit(") - 1");
+        } else {
+            // Multi-dimensional but no type info - just use first index
+            indices[0]->accept(*this);
+            emit(" - 1");
+        }
+        
+        emit("]");
+    }
+}
+
+void CppGenerator::visit(SetLiteralExpression& node) {
+    // Generate C++ set literal with proper type inference
+    // For now, determine type from first element - could be improved with full type analysis
+    std::string elementType = "int"; // default to int
+    
+    const auto& elements = node.getElements();
+    if (!elements.empty()) {
+        // Check if first element is a character literal
+        if (auto* literal = dynamic_cast<LiteralExpression*>(elements[0].get())) {
+            if (literal->getToken().getType() == TokenType::CHAR_LITERAL) {
+                elementType = "char";
+            } else if (literal->getToken().getType() == TokenType::INTEGER_LITERAL) {
+                elementType = "int";
+            }
+        }
     }
     
-    emit("]");
+    emit("std::set<" + elementType + ">{");
+    for (size_t i = 0; i < elements.size(); ++i) {
+        if (i > 0) emit(", ");
+        elements[i]->accept(*this);
+    }
+    emit("}");
 }
 
 void CppGenerator::visit(ExpressionStatement& node) {
@@ -288,6 +397,10 @@ void CppGenerator::visit(TypeDefinition& node) {
     else if (definition.find("array[") != std::string::npos) {
         generateArrayDefinition(node.getName(), definition);
     } 
+    // Handle set types
+    else if (definition.find("set of") != std::string::npos) {
+        generateSetDefinition(node.getName(), definition);
+    } 
     // Handle range types  
     else if (definition.find("..") != std::string::npos) {
         generateRangeDefinition(node.getName(), definition);
@@ -437,6 +550,7 @@ std::string CppGenerator::generateHeaders() {
            "#include <iostream>\n"
            "#include <string>\n"
            "#include <array>\n"
+           "#include <set>\n"
            "#include <cstdint>";
 }
 
@@ -683,7 +797,7 @@ void CppGenerator::generateRecordDefinition(const std::string& typeName, const s
 }
 
 void CppGenerator::generateArrayDefinition(const std::string& typeName, const std::string& definition) {
-    // Parse array definition: "array[1..5] of integer" -> "using TArray = std::array<int, 5>;"
+    // Parse array definition: "array[1..5] of integer" or "array[1..3, 1..3] of real"
     
     // Extract range and element type
     size_t arrayPos = definition.find("array[");
@@ -697,54 +811,111 @@ void CppGenerator::generateArrayDefinition(const std::string& typeName, const st
         elementType.erase(0, elementType.find_first_not_of(" \t\n\r"));
         elementType.erase(elementType.find_last_not_of(" \t\n\r") + 1);
         
-        // Parse range: "1..5" -> size = 5 - 1 + 1 = 5
-        size_t dotdotPos = rangeSpec.find("..");
-        if (dotdotPos != std::string::npos) {
-            std::string startStr = rangeSpec.substr(0, dotdotPos);
-            std::string endStr = rangeSpec.substr(dotdotPos + 2);
+        // Parse multiple dimensions separated by commas
+        std::vector<std::string> dimensions;
+        std::stringstream ss(rangeSpec);
+        std::string dim;
+        
+        while (std::getline(ss, dim, ',')) {
+            // Trim whitespace
+            dim.erase(0, dim.find_first_not_of(" \t\n\r"));
+            dim.erase(dim.find_last_not_of(" \t\n\r") + 1);
+            dimensions.push_back(dim);
+        }
+        
+        ArrayTypeInfo info;
+        info.elementType = elementType;
+        int totalSize = 1;
+        bool allParsed = true;
+        
+        // Parse each dimension
+        for (const std::string& dimRange : dimensions) {
+            size_t dotdotPos = dimRange.find("..");
             
-            // Trim numbers
-            startStr.erase(0, startStr.find_first_not_of(" \t\n\r"));
-            startStr.erase(startStr.find_last_not_of(" \t\n\r") + 1);
-            endStr.erase(0, endStr.find_first_not_of(" \t\n\r"));
-            endStr.erase(endStr.find_last_not_of(" \t\n\r") + 1);
-            
-            try {
-                int start, end, size;
-                bool isCharacterArray = false;
+            // Check if it's an enum type (no .. found)
+            if (dotdotPos == std::string::npos) {
+                // Single enum type like "TColor"
+                std::string enumTypeName = dimRange;
+                enumTypeName.erase(0, enumTypeName.find_first_not_of(" \t\n\r"));
+                enumTypeName.erase(enumTypeName.find_last_not_of(" \t\n\r") + 1);
                 
-                // Handle character ranges like 'A'..'D'
-                if (startStr.length() == 3 && startStr[0] == '\'' && startStr[2] == '\'' &&
-                    endStr.length() == 3 && endStr[0] == '\'' && endStr[2] == '\'') {
-                    start = static_cast<int>(startStr[1]);
-                    end = static_cast<int>(endStr[1]);
-                    size = end - start + 1;
-                    isCharacterArray = true;
+                auto enumIt = enumTypes_.find(enumTypeName);
+                if (enumIt != enumTypes_.end()) {
+                    ArrayDimension dimension;
+                    dimension.startIndex = 0; // Enums start at 0
+                    dimension.endIndex = enumIt->second.size() - 1;
+                    dimension.isCharacterRange = false;
+                    dimension.isEnumRange = true;
+                    dimension.enumTypeName = enumTypeName;
+                    
+                    int dimSize = enumIt->second.size();
+                    totalSize *= dimSize;
+                    info.dimensions.push_back(dimension);
+                    
+                    // Legacy support for single dimension
+                    if (info.dimensions.size() == 1) {
+                        info.startIndex = dimension.startIndex;
+                        info.endIndex = dimension.endIndex;
+                        info.isCharacterArray = false;
+                    }
                 } else {
-                    // Handle numeric ranges
-                    start = std::stoi(startStr);
-                    end = std::stoi(endStr);
-                    size = end - start + 1;
+                    allParsed = false;
+                    break;
                 }
+            } else {
+                // Range like "1..5" or "'A'..'D'"
+                std::string startStr = dimRange.substr(0, dotdotPos);
+                std::string endStr = dimRange.substr(dotdotPos + 2);
                 
-                // Store array type information for indexing
-                ArrayTypeInfo info;
-                info.elementType = elementType;
-                info.startIndex = start;
-                info.endIndex = end;
-                info.isCharacterArray = isCharacterArray;
-                arrayTypes_[typeName] = info;
+                // Trim
+                startStr.erase(0, startStr.find_first_not_of(" \t\n\r"));
+                startStr.erase(startStr.find_last_not_of(" \t\n\r") + 1);
+                endStr.erase(0, endStr.find_first_not_of(" \t\n\r"));
+                endStr.erase(endStr.find_last_not_of(" \t\n\r") + 1);
                 
-                std::string cppElementType = mapPascalTypeToCpp(elementType);
-                emitLine("using " + typeName + " = std::array<" + cppElementType + ", " + std::to_string(size) + ">;");
-                emitLine("");
-            } catch (const std::exception&) {
-                // Fallback for non-numeric ranges
-                emitLine("// Array definition: " + typeName + " = " + definition);
-                emitLine("using " + typeName + " = int; // TODO: implement proper array type");
+                try {
+                    ArrayDimension dimension;
+                    dimension.isEnumRange = false;
+                    
+                    // Handle character ranges like 'A'..'D'
+                    if (startStr.length() == 3 && startStr[0] == '\'' && startStr[2] == '\'' &&
+                        endStr.length() == 3 && endStr[0] == '\'' && endStr[2] == '\'') {
+                        dimension.startIndex = static_cast<int>(startStr[1]);
+                        dimension.endIndex = static_cast<int>(endStr[1]);
+                        dimension.isCharacterRange = true;
+                    } else {
+                        // Handle numeric ranges
+                        dimension.startIndex = std::stoi(startStr);
+                        dimension.endIndex = std::stoi(endStr);
+                        dimension.isCharacterRange = false;
+                    }
+                    
+                    int dimSize = dimension.endIndex - dimension.startIndex + 1;
+                    totalSize *= dimSize;
+                    info.dimensions.push_back(dimension);
+                    
+                    // Legacy support for single dimension
+                    if (info.dimensions.size() == 1) {
+                        info.startIndex = dimension.startIndex;
+                        info.endIndex = dimension.endIndex;
+                        info.isCharacterArray = dimension.isCharacterRange;
+                    }
+                } catch (const std::exception&) {
+                    allParsed = false;
+                    break;
+                }
             }
+        }
+        
+        if (allParsed && !info.dimensions.empty()) {
+            // Store array type information
+            arrayTypes_[typeName] = info;
+            
+            std::string cppElementType = mapPascalTypeToCpp(elementType);
+            emitLine("using " + typeName + " = std::array<" + cppElementType + ", " + std::to_string(totalSize) + ">;");
+            emitLine("");
         } else {
-            // Single index or unknown format
+            // Fallback for unparseable dimensions
             emitLine("// Array definition: " + typeName + " = " + definition);
             emitLine("using " + typeName + " = int; // TODO: implement proper array type");
         }
@@ -803,11 +974,36 @@ void CppGenerator::generateRangeDefinition(const std::string& typeName, const st
     emitLine("");
 }
 
+void CppGenerator::generateSetDefinition(const std::string& typeName, const std::string& definition) {
+    // Parse set definition: "set of char" -> "using TCharSet = std::set<char>;"
+    
+    size_t setOfPos = definition.find("set of");
+    if (setOfPos != std::string::npos) {
+        std::string elementType = definition.substr(setOfPos + 7); // Skip "set of "
+        
+        // Trim whitespace
+        elementType.erase(0, elementType.find_first_not_of(" \t\n\r"));
+        elementType.erase(elementType.find_last_not_of(" \t\n\r") + 1);
+        
+        std::string cppElementType = mapPascalTypeToCpp(elementType);
+        emitLine("using " + typeName + " = std::set<" + cppElementType + ">;");
+        emitLine("");
+    } else {
+        // Malformed set definition
+        emitLine("// Set definition: " + typeName + " = " + definition);
+        emitLine("using " + typeName + " = std::set<int>; // TODO: implement proper set type");
+        emitLine("");
+    }
+}
+
 void CppGenerator::generateEnumDefinition(const std::string& typeName, const std::string& definition) {
     // Parse enumeration definition: "(Red, Green, Blue)"
     
     if (definition.length() > 2 && definition[0] == '(' && definition.back() == ')') {
         std::string enumValues = definition.substr(1, definition.length() - 2); // Remove parentheses
+        
+        // Store enum information for array indexing
+        EnumTypeInfo enumInfo;
         
         emitLine("// Enumeration: " + typeName + " = " + definition);
         emitLine("enum class " + typeName + " {");
@@ -832,6 +1028,9 @@ void CppGenerator::generateEnumDefinition(const std::string& typeName, const std
             if (start != std::string::npos && end != std::string::npos) {
                 enumValue = enumValue.substr(start, end - start + 1);
                 
+                // Store in enum info
+                enumInfo.values.push_back(enumValue);
+                
                 if (!firstValue) {
                     emit(",");
                     emitLine("");
@@ -849,27 +1048,15 @@ void CppGenerator::generateEnumDefinition(const std::string& typeName, const std
         decreaseIndent();
         emitLine("};");
         
+        // Store enum information
+        enumTypes_[typeName] = enumInfo;
+        
         // Generate constants for the enum values to use in Pascal code
         emitLine("");
         emitLine("// Enum value constants for Pascal compatibility");
-        pos = 0;
-        enumOrdinal = 0;
-        while (pos < enumValues.length()) {
-            size_t commaPos = enumValues.find(',', pos);
-            if (commaPos == std::string::npos) {
-                commaPos = enumValues.length();
-            }
-            
-            std::string enumValue = enumValues.substr(pos, commaPos - pos);
-            size_t start = enumValue.find_first_not_of(" \t");
-            size_t end = enumValue.find_last_not_of(" \t");
-            if (start != std::string::npos && end != std::string::npos) {
-                enumValue = enumValue.substr(start, end - start + 1);
-                emitLine("const " + typeName + " " + enumValue + " = " + typeName + "::" + enumValue + ";");
-                enumOrdinal++;
-            }
-            
-            pos = commaPos + 1;
+        for (size_t i = 0; i < enumInfo.values.size(); ++i) {
+            const std::string& enumValue = enumInfo.values[i];
+            emitLine("const " + typeName + " " + enumValue + " = " + typeName + "::" + enumValue + ";");
         }
     } else {
         // Malformed enum definition

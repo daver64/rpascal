@@ -26,6 +26,7 @@ public:
     void visit(CallExpression& node) override;
     void visit(FieldAccessExpression& node) override;
     void visit(ArrayIndexExpression& node) override;
+    void visit(SetLiteralExpression& node) override;
     
     void visit(ExpressionStatement& node) override;
     void visit(CompoundStatement& node) override;
@@ -51,13 +52,31 @@ private:
     std::string currentFunction_;
     
     // Array type information for proper indexing
+    struct ArrayDimension {
+        int startIndex;
+        int endIndex;
+        bool isCharacterRange;
+        bool isEnumRange;
+        std::string enumTypeName;
+    };
+    
     struct ArrayTypeInfo {
         std::string elementType;
+        std::vector<ArrayDimension> dimensions;
+        
+        // Legacy single dimension support
         int startIndex;
         int endIndex;
         bool isCharacterArray;
     };
+    
+    struct EnumTypeInfo {
+        std::vector<std::string> values;
+        int size() const { return static_cast<int>(values.size()); }
+    };
+    
     std::map<std::string, ArrayTypeInfo> arrayTypes_;
+    std::map<std::string, EnumTypeInfo> enumTypes_;
     
     // Helper methods
     void emit(const std::string& code);
@@ -75,6 +94,7 @@ private:
     std::string mapPascalFunctionToCpp(const std::string& functionName);
     void generateRecordDefinition(const std::string& typeName, const std::string& definition);
     void generateArrayDefinition(const std::string& typeName, const std::string& definition);
+    void generateSetDefinition(const std::string& typeName, const std::string& definition);
     void generateRangeDefinition(const std::string& typeName, const std::string& definition);
     void generateEnumDefinition(const std::string& typeName, const std::string& definition);
     

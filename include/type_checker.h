@@ -31,6 +31,7 @@ public:
     void visit(CallExpression& node) override;
     void visit(FieldAccessExpression& node) override;
     void visit(ArrayIndexExpression& node) override;
+    void visit(SetLiteralExpression& node) override;
     
     void visit(ExpressionStatement& node) override;
     void visit(CompoundStatement& node) override;

@@ -518,7 +518,8 @@ std::unique_ptr<Expression> Parser::parseRelationalExpression() {
     auto expr = parseAdditiveExpression();
     
     while (check(TokenType::LESS_THAN) || check(TokenType::LESS_EQUAL) ||
-           check(TokenType::GREATER_THAN) || check(TokenType::GREATER_EQUAL)) {
+           check(TokenType::GREATER_THAN) || check(TokenType::GREATER_EQUAL) ||
+           check(TokenType::IN)) {
         Token op = currentToken_;
         advance();
         auto right = parseAdditiveExpression();
@@ -594,11 +595,20 @@ std::unique_ptr<Expression> Parser::parsePrimaryExpression() {
                 Token fieldToken = consume(TokenType::IDENTIFIER, "Expected field name after '.'");
                 expr = std::make_unique<FieldAccessExpression>(std::move(expr), fieldToken.getValue());
             } else if (check(TokenType::LEFT_BRACKET)) {
-                // Array indexing
+                // Array indexing - handle multiple dimensions
                 advance(); // consume '['
-                auto index = parseExpression();
+                
+                std::vector<std::unique_ptr<Expression>> indices;
+                indices.push_back(parseExpression());
+                
+                // Parse additional dimensions separated by commas
+                while (check(TokenType::COMMA)) {
+                    advance(); // consume ','
+                    indices.push_back(parseExpression());
+                }
+                
                 consume(TokenType::RIGHT_BRACKET, "Expected ']' after array index");
-                expr = std::make_unique<ArrayIndexExpression>(std::move(expr), std::move(index));
+                expr = std::make_unique<ArrayIndexExpression>(std::move(expr), std::move(indices));
             } else {
                 break; // No more postfix operations
             }
@@ -612,6 +622,23 @@ std::unique_ptr<Expression> Parser::parsePrimaryExpression() {
         auto expr = parseExpression();
         consume(TokenType::RIGHT_PAREN, "Expected ')' after expression");
         return expr;
+    }
+    
+    if (check(TokenType::LEFT_BRACKET)) {
+        // Set literal: [element1, element2, ...]
+        advance(); // consume '['
+        std::vector<std::unique_ptr<Expression>> elements;
+        
+        if (!check(TokenType::RIGHT_BRACKET)) {
+            elements.push_back(parseExpression());
+            
+            while (match(TokenType::COMMA)) {
+                elements.push_back(parseExpression());
+            }
+        }
+        
+        consume(TokenType::RIGHT_BRACKET, "Expected ']' after set elements");
+        return std::make_unique<SetLiteralExpression>(std::move(elements));
     }
     
     addError("Expected expression");
@@ -679,6 +706,13 @@ std::string Parser::parseTypeDefinition() {
         consume(TokenType::RIGHT_PAREN, "Expected ')' after enumeration");
         enumDef += ")";
         return enumDef;
+    } else if (check(TokenType::SET)) {
+        // Set type: set of type
+        advance(); // consume 'set'
+        consume(TokenType::OF, "Expected 'of' after 'set'");
+        
+        std::string elementType = parseTypeName();
+        return "set of " + elementType;
     } else if (check(TokenType::RECORD)) {
         // Record type: record ... end
         advance(); // consume 'record'

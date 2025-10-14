@@ -133,6 +133,16 @@ void SemanticAnalyzer::visit(ArrayIndexExpression& node) {
     // TODO: Add proper array bounds checking and ensure index is integer type
 }
 
+void SemanticAnalyzer::visit(SetLiteralExpression& node) {
+    // Visit all elements to ensure they're valid
+    for (const auto& element : node.getElements()) {
+        element->accept(*this);
+    }
+    
+    // TODO: Add proper set element type validation
+    currentExpressionType_ = DataType::UNKNOWN; // Sets don't have a basic data type
+}
+
 void SemanticAnalyzer::visit(ExpressionStatement& node) {
     node.getExpression()->accept(*this);
 }
@@ -444,7 +454,8 @@ DataType SemanticAnalyzer::getResultType(DataType left, DataType right, TokenTyp
     // Comparison operators always return boolean
     if (operator_ == TokenType::EQUAL || operator_ == TokenType::NOT_EQUAL ||
         operator_ == TokenType::LESS_THAN || operator_ == TokenType::LESS_EQUAL ||
-        operator_ == TokenType::GREATER_THAN || operator_ == TokenType::GREATER_EQUAL) {
+        operator_ == TokenType::GREATER_THAN || operator_ == TokenType::GREATER_EQUAL ||
+        operator_ == TokenType::IN) {
         return DataType::BOOLEAN;
     }
     

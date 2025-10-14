@@ -51,6 +51,7 @@ const std::unordered_map<std::string, TokenType> Keywords::keywords_ = {
     {"or", TokenType::OR},
     {"not", TokenType::NOT},
     {"xor", TokenType::XOR},
+    {"in", TokenType::IN},
     {"shl", TokenType::SHL},
     {"shr", TokenType::SHR}
 };

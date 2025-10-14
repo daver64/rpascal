@@ -134,17 +134,37 @@ private:
 class ArrayIndexExpression : public Expression {
 public:
     ArrayIndexExpression(std::unique_ptr<Expression> array, std::unique_ptr<Expression> index)
-        : array_(std::move(array)), index_(std::move(index)) {}
+        : array_(std::move(array)) {
+        indices_.push_back(std::move(index));
+    }
+    
+    ArrayIndexExpression(std::unique_ptr<Expression> array, std::vector<std::unique_ptr<Expression>> indices)
+        : array_(std::move(array)), indices_(std::move(indices)) {}
     
     void accept(ASTVisitor& visitor) override;
     std::string toString() const override;
     
     Expression* getArray() const { return array_.get(); }
-    Expression* getIndex() const { return index_.get(); }
+    Expression* getIndex() const { return indices_.empty() ? nullptr : indices_[0].get(); }
+    const std::vector<std::unique_ptr<Expression>>& getIndices() const { return indices_; }
     
 private:
     std::unique_ptr<Expression> array_;
-    std::unique_ptr<Expression> index_;
+    std::vector<std::unique_ptr<Expression>> indices_;
+};
+
+class SetLiteralExpression : public Expression {
+public:
+    SetLiteralExpression(std::vector<std::unique_ptr<Expression>> elements)
+        : elements_(std::move(elements)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::vector<std::unique_ptr<Expression>>& getElements() const { return elements_; }
+    
+private:
+    std::vector<std::unique_ptr<Expression>> elements_;
 };
 
 // Statement types
@@ -461,6 +481,7 @@ public:
     virtual void visit(CallExpression& node) = 0;
     virtual void visit(FieldAccessExpression& node) = 0;
     virtual void visit(ArrayIndexExpression& node) = 0;
+    virtual void visit(SetLiteralExpression& node) = 0;
     
     virtual void visit(ExpressionStatement& node) = 0;
     virtual void visit(CompoundStatement& node) = 0;

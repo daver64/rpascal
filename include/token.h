@@ -76,6 +76,7 @@ enum class TokenType {
     OR,             // or
     NOT,            // not
     XOR,            // xor
+    IN,             // in
     SHL,            // shl
     SHR,            // shr
     

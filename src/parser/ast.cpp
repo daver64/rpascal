@@ -71,7 +71,29 @@ void ArrayIndexExpression::accept(ASTVisitor& visitor) {
 }
 
 std::string ArrayIndexExpression::toString() const {
-    return "ArrayIndexExpression(" + array_->toString() + "[" + index_->toString() + "])";
+    std::string result = "ArrayIndexExpression(" + array_->toString() + "[";
+    for (size_t i = 0; i < indices_.size(); ++i) {
+        if (i > 0) result += ", ";
+        result += indices_[i]->toString();
+    }
+    result += "])";
+    return result;
+}
+
+// SetLiteralExpression
+void SetLiteralExpression::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string SetLiteralExpression::toString() const {
+    std::ostringstream oss;
+    oss << "SetLiteralExpression([";
+    for (size_t i = 0; i < elements_.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << elements_[i]->toString();
+    }
+    oss << "])";
+    return oss.str();
 }
 
 // ExpressionStatement
