@@ -8,9 +8,11 @@ A modern Pascal-to-C++ transpiler that aims for Turbo Pascal 7 compatibility. RP
 - **Variables**: All basic types (integer, real, boolean, char, string)
 - **Constants**: Compile-time constant declarations
 - **Type Definitions**: Custom types, records (structs), arrays with ranges
+- **Enumeration Types**: Full enum support with C++ enum class generation
 - **Functions & Procedures**: Parameters, return values, local variables
 - **Parameter Passing**: By value and by reference (`var` parameters)
-- **Control Flow**: if-then-else, while loops
+- **Control Flow**: if-then-else, while loops, repeat-until loops, case statements
+- **Case Statements**: Multi-value cases, else clause, character and integer expressions
 - **Expressions**: Arithmetic, boolean, string operations
 - **Record Access**: Field access via dot notation (`record.field`)
 - **Array Indexing**: Array element access (`array[index]`)
@@ -90,10 +92,13 @@ type
         x, y: integer;
     end;
     TArray = array[1..5] of integer;
+    TColor = (Red, Green, Blue, Yellow);
 
 var
     point: TPoint;
     numbers: TArray;
+    color: TColor;
+    grade: char;
     i: integer;
 
 procedure ShowPoint(p: TPoint);
@@ -107,6 +112,7 @@ begin
 end;
 
 begin
+    { Records and arrays }
     point.x := 10;
     point.y := 20;
     ShowPoint(point);
@@ -114,6 +120,28 @@ begin
     numbers[1] := 100;
     writeln('First element: ', numbers[1]);
     writeln('Sum: ', Add(5, 3));
+    
+    { Enumeration types }
+    color := Red;
+    writeln('Color value: ', ord(color));
+    
+    { Case statements }
+    grade := 'B';
+    case grade of
+        'A': writeln('Excellent');
+        'B': writeln('Good');
+        'C': writeln('Average');
+        'D', 'F': writeln('Poor')
+    else
+        writeln('Invalid grade')
+    end;
+    
+    { Repeat-until loops }
+    i := 1;
+    repeat
+        writeln('Count: ', i);
+        i := i + 1;
+    until i > 3;
 end.
 ```
 
@@ -134,8 +162,8 @@ rpascal/
 ## Current Limitations
 
 ### ⚠️ **Not Yet Implemented**
-- **Advanced Control Flow**: for loops, repeat-until, case statements
-- **Advanced Types**: Sets, files, pointers, variant records
+- **Advanced Control Flow**: for loops
+- **Advanced Types**: Sets, files, pointers, variant records, advanced array types
 - **Units/Modules**: Uses clause, unit system
 - **Advanced Functions**: Function overloading, nested functions
 - **Object-Oriented**: Classes, inheritance (Turbo Pascal 5.5+ features)
@@ -162,7 +190,8 @@ See [LICENSE](LICENSE) file for details.
 ## Roadmap
 
 - [ ] Enhanced error reporting with line numbers
-- [ ] For loops and case statements
+- [ ] Array types with proper bounds checking
+- [ ] For loops and additional control structures
 - [ ] File I/O operations
 - [ ] Set types and operations
 - [ ] Unit system support

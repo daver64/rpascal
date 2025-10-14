@@ -270,6 +270,40 @@ private:
     std::unique_ptr<Expression> condition_;
 };
 
+class CaseBranch {
+public:
+    CaseBranch(std::vector<std::unique_ptr<Expression>> values, std::unique_ptr<Statement> statement)
+        : values_(std::move(values)), statement_(std::move(statement)) {}
+    
+    const std::vector<std::unique_ptr<Expression>>& getValues() const { return values_; }
+    Statement* getStatement() const { return statement_.get(); }
+    
+private:
+    std::vector<std::unique_ptr<Expression>> values_;
+    std::unique_ptr<Statement> statement_;
+};
+
+class CaseStatement : public Statement {
+public:
+    CaseStatement(std::unique_ptr<Expression> expression, 
+                 std::vector<std::unique_ptr<CaseBranch>> branches,
+                 std::unique_ptr<Statement> elseClause = nullptr)
+        : expression_(std::move(expression)), branches_(std::move(branches)), 
+          elseClause_(std::move(elseClause)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    Expression* getExpression() const { return expression_.get(); }
+    const std::vector<std::unique_ptr<CaseBranch>>& getBranches() const { return branches_; }
+    Statement* getElseClause() const { return elseClause_.get(); }
+    
+private:
+    std::unique_ptr<Expression> expression_;
+    std::vector<std::unique_ptr<CaseBranch>> branches_;
+    std::unique_ptr<Statement> elseClause_;
+};
+
 // Declaration types
 class ConstantDeclaration : public Declaration {
 public:
@@ -413,6 +447,7 @@ public:
     virtual void visit(WhileStatement& node) = 0;
     virtual void visit(ForStatement& node) = 0;
     virtual void visit(RepeatStatement& node) = 0;
+    virtual void visit(CaseStatement& node) = 0;
     
     virtual void visit(ConstantDeclaration& node) = 0;
     virtual void visit(TypeDefinition& node) = 0;

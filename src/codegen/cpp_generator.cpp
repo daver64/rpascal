@@ -196,6 +196,45 @@ void CppGenerator::visit(RepeatStatement& node) {
     emitLine("));");
 }
 
+void CppGenerator::visit(CaseStatement& node) {
+    emitIndent();
+    emit("switch (");
+    node.getExpression()->accept(*this);
+    emitLine(") {");
+    
+    increaseIndent();
+    
+    // Generate case branches
+    for (const auto& branch : node.getBranches()) {
+        for (const auto& value : branch->getValues()) {
+            emitIndent();
+            emit("case ");
+            value->accept(*this);
+            emitLine(":");
+        }
+        increaseIndent();
+        branch->getStatement()->accept(*this);
+        emitIndent();
+        emitLine("break;");
+        decreaseIndent();
+    }
+    
+    // Generate default case if else clause exists
+    if (node.getElseClause()) {
+        emitIndent();
+        emitLine("default:");
+        increaseIndent();
+        node.getElseClause()->accept(*this);
+        emitIndent();
+        emitLine("break;");
+        decreaseIndent();
+    }
+    
+    decreaseIndent();
+    emitIndent();
+    emitLine("}");
+}
+
 void CppGenerator::visit(ConstantDeclaration& node) {
     emitIndent();
     emit("const auto " + node.getName() + " = ");

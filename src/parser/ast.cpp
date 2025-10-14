@@ -152,6 +152,29 @@ std::string RepeatStatement::toString() const {
            condition_->toString() + ")";
 }
 
+// CaseStatement
+void CaseStatement::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string CaseStatement::toString() const {
+    std::string result = "CaseStatement(" + expression_->toString() + " of ";
+    for (size_t i = 0; i < branches_.size(); ++i) {
+        if (i > 0) result += "; ";
+        const auto& branch = branches_[i];
+        for (size_t j = 0; j < branch->getValues().size(); ++j) {
+            if (j > 0) result += ", ";
+            result += branch->getValues()[j]->toString();
+        }
+        result += ": " + branch->getStatement()->toString();
+    }
+    if (elseClause_) {
+        result += " else " + elseClause_->toString();
+    }
+    result += ")";
+    return result;
+}
+
 // ConstantDeclaration
 void ConstantDeclaration::accept(ASTVisitor& visitor) {
     visitor.visit(*this);

@@ -51,6 +51,7 @@ private:
     std::unique_ptr<WhileStatement> parseWhileStatement();
     std::unique_ptr<ForStatement> parseForStatement();
     std::unique_ptr<RepeatStatement> parseRepeatStatement();
+    std::unique_ptr<CaseStatement> parseCaseStatement();
     std::unique_ptr<ExpressionStatement> parseExpressionStatement();
     
     std::unique_ptr<Expression> parseExpression();

@@ -298,6 +298,8 @@ std::unique_ptr<Statement> Parser::parseStatement() {
             return parseForStatement();
         } else if (match(TokenType::REPEAT)) {
             return parseRepeatStatement();
+        } else if (match(TokenType::CASE)) {
+            return parseCaseStatement();
         } else {
             // Try to parse as assignment or expression statement
             auto expr = parseExpression();
@@ -422,6 +424,46 @@ std::unique_ptr<RepeatStatement> Parser::parseRepeatStatement() {
     auto condition = parseExpression();
     
     return std::make_unique<RepeatStatement>(std::move(body), std::move(condition));
+}
+
+std::unique_ptr<CaseStatement> Parser::parseCaseStatement() {
+    // Parse: case expression of value1: stmt1; value2: stmt2; else stmt3; end
+    auto expression = parseExpression();
+    consume(TokenType::OF, "Expected 'of'");
+    
+    std::vector<std::unique_ptr<CaseBranch>> branches;
+    std::unique_ptr<Statement> elseClause = nullptr;
+    
+    // Parse case branches
+    while (!check(TokenType::ELSE) && !check(TokenType::END) && !isAtEnd()) {
+        // Parse case values (can be multiple: value1, value2, value3)
+        std::vector<std::unique_ptr<Expression>> values;
+        values.push_back(parseExpression());
+        
+        // Parse additional values separated by commas
+        while (match(TokenType::COMMA)) {
+            values.push_back(parseExpression());
+        }
+        
+        consume(TokenType::COLON, "Expected ':' after case value");
+        auto statement = parseStatement();
+        
+        branches.push_back(std::make_unique<CaseBranch>(std::move(values), std::move(statement)));
+        
+        // Consume optional semicolon
+        if (check(TokenType::SEMICOLON)) {
+            advance();
+        }
+    }
+    
+    // Parse optional else clause
+    if (match(TokenType::ELSE)) {
+        elseClause = parseStatement();
+    }
+    
+    consume(TokenType::END, "Expected 'end'");
+    
+    return std::make_unique<CaseStatement>(std::move(expression), std::move(branches), std::move(elseClause));
 }
 
 std::unique_ptr<ExpressionStatement> Parser::parseExpressionStatement() {

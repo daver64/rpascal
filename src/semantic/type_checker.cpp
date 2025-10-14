@@ -219,6 +219,35 @@ void SemanticAnalyzer::visit(RepeatStatement& node) {
     }
 }
 
+void SemanticAnalyzer::visit(CaseStatement& node) {
+    // Check the case expression
+    node.getExpression()->accept(*this);
+    DataType caseExpressionType = currentExpressionType_;
+    
+    // Check all case branches
+    for (const auto& branch : node.getBranches()) {
+        // Check each value in the branch
+        for (const auto& value : branch->getValues()) {
+            value->accept(*this);
+            DataType valueType = currentExpressionType_;
+            
+            // Check that the value is compatible with the case expression
+            if (caseExpressionType != DataType::UNKNOWN && valueType != DataType::UNKNOWN && 
+                caseExpressionType != valueType) {
+                addError("Case value type doesn't match case expression type");
+            }
+        }
+        
+        // Check the branch statement
+        branch->getStatement()->accept(*this);
+    }
+    
+    // Check the else clause if present
+    if (node.getElseClause()) {
+        node.getElseClause()->accept(*this);
+    }
+}
+
 void SemanticAnalyzer::visit(ConstantDeclaration& node) {
     // Analyze the constant value expression
     node.getValue()->accept(*this);
