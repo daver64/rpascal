@@ -271,4 +271,35 @@ std::string Program::toString() const {
     return oss.str();
 }
 
+// ArrayType
+int ArrayType::calculateSize() const {
+    // For now, handle simple integer ranges
+    if (auto startLit = dynamic_cast<LiteralExpression*>(startIndex_.get())) {
+        if (auto endLit = dynamic_cast<LiteralExpression*>(endIndex_.get())) {
+            try {
+                int start = std::stoi(startLit->getToken().getValue());
+                int end = std::stoi(endLit->getToken().getValue());
+                return end - start + 1;
+            } catch (const std::exception&) {
+                // Non-numeric bounds
+                return 1; // Default size
+            }
+        }
+    }
+    return 1; // Default size for unknown bounds
+}
+
+int ArrayType::getStartOffset() const {
+    // For now, handle simple integer ranges
+    if (auto startLit = dynamic_cast<LiteralExpression*>(startIndex_.get())) {
+        try {
+            return std::stoi(startLit->getToken().getValue());
+        } catch (const std::exception&) {
+            // Non-numeric start
+            return 0; // Default to 0-based
+        }
+    }
+    return 0; // Default to 0-based
+}
+
 } // namespace rpascal

@@ -89,9 +89,40 @@ void CppGenerator::visit(FieldAccessExpression& node) {
 }
 
 void CppGenerator::visit(ArrayIndexExpression& node) {
+    // Get the array variable name to look up its type
+    std::string arrayVarName;
+    if (auto* identifierExpr = dynamic_cast<IdentifierExpression*>(node.getArray())) {
+        arrayVarName = identifierExpr->getName();
+    }
+    
     node.getArray()->accept(*this);
     emit("[");
-    node.getIndex()->accept(*this);
+    
+    // Look up the variable's type from symbol table
+    std::string arrayTypeName;
+    if (!arrayVarName.empty() && symbolTable_) {
+        auto symbol = symbolTable_->lookup(arrayVarName);
+        if (symbol && symbol->getSymbolType() == SymbolType::VARIABLE) {
+            arrayTypeName = symbol->getTypeName();
+        }
+    }
+    
+    // Check if we have array type information for proper offset calculation
+    auto arrayTypeIt = arrayTypes_.find(arrayTypeName);
+    if (arrayTypeIt != arrayTypes_.end()) {
+        const ArrayTypeInfo& info = arrayTypeIt->second;
+        
+        // Generate proper offset calculation
+        emit("(");
+        node.getIndex()->accept(*this);
+        emit(") - " + std::to_string(info.startIndex));
+    } else {
+        // Fallback to simple -1 offset for 1-based arrays
+        emit("(");
+        node.getIndex()->accept(*this);
+        emit(") - 1");
+    }
+    
     emit("]");
 }
 
@@ -679,9 +710,30 @@ void CppGenerator::generateArrayDefinition(const std::string& typeName, const st
             endStr.erase(endStr.find_last_not_of(" \t\n\r") + 1);
             
             try {
-                int start = std::stoi(startStr);
-                int end = std::stoi(endStr);
-                int size = end - start + 1;
+                int start, end, size;
+                bool isCharacterArray = false;
+                
+                // Handle character ranges like 'A'..'D'
+                if (startStr.length() == 3 && startStr[0] == '\'' && startStr[2] == '\'' &&
+                    endStr.length() == 3 && endStr[0] == '\'' && endStr[2] == '\'') {
+                    start = static_cast<int>(startStr[1]);
+                    end = static_cast<int>(endStr[1]);
+                    size = end - start + 1;
+                    isCharacterArray = true;
+                } else {
+                    // Handle numeric ranges
+                    start = std::stoi(startStr);
+                    end = std::stoi(endStr);
+                    size = end - start + 1;
+                }
+                
+                // Store array type information for indexing
+                ArrayTypeInfo info;
+                info.elementType = elementType;
+                info.startIndex = start;
+                info.endIndex = end;
+                info.isCharacterArray = isCharacterArray;
+                arrayTypes_[typeName] = info;
                 
                 std::string cppElementType = mapPascalTypeToCpp(elementType);
                 emitLine("using " + typeName + " = std::array<" + cppElementType + ", " + std::to_string(size) + ">;");

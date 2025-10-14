@@ -304,6 +304,28 @@ private:
     std::unique_ptr<Statement> elseClause_;
 };
 
+// Array Type representation
+class ArrayType {
+public:
+    ArrayType(std::unique_ptr<Expression> startIndex, std::unique_ptr<Expression> endIndex, const std::string& elementType)
+        : startIndex_(std::move(startIndex)), endIndex_(std::move(endIndex)), elementType_(elementType) {}
+    
+    Expression* getStartIndex() const { return startIndex_.get(); }
+    Expression* getEndIndex() const { return endIndex_.get(); }
+    const std::string& getElementType() const { return elementType_; }
+    
+    // Calculate size for C++ array
+    int calculateSize() const;
+    
+    // Get the starting offset for indexing conversion
+    int getStartOffset() const;
+    
+private:
+    std::unique_ptr<Expression> startIndex_;
+    std::unique_ptr<Expression> endIndex_;
+    std::string elementType_;
+};
+
 // Declaration types
 class ConstantDeclaration : public Declaration {
 public:

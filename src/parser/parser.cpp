@@ -702,9 +702,13 @@ std::string Parser::parseTypeDefinition() {
             advance(); // consume '['
             arrayDef += "[";
             
-            // Parse array bounds
+            // Parse array bounds - preserve token format for proper parsing
             while (!check(TokenType::RIGHT_BRACKET) && !isAtEnd()) {
-                arrayDef += currentToken_.getValue();
+                if (currentToken_.getType() == TokenType::CHAR_LITERAL) {
+                    arrayDef += "'" + currentToken_.getValue() + "'";
+                } else {
+                    arrayDef += currentToken_.getValue();
+                }
                 advance();
             }
             

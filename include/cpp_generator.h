@@ -6,6 +6,7 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <map>
 
 namespace rpascal {
 
@@ -48,6 +49,15 @@ private:
     std::ostringstream output_;
     int indentLevel_;
     std::string currentFunction_;
+    
+    // Array type information for proper indexing
+    struct ArrayTypeInfo {
+        std::string elementType;
+        int startIndex;
+        int endIndex;
+        bool isCharacterArray;
+    };
+    std::map<std::string, ArrayTypeInfo> arrayTypes_;
     
     // Helper methods
     void emit(const std::string& code);
