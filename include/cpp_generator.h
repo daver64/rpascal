@@ -2,6 +2,7 @@
 
 #include "ast.h"
 #include "symbol_table.h"
+#include "unit_loader.h"
 #include <memory>
 #include <string>
 #include <sstream>
@@ -10,10 +11,13 @@
 
 namespace rpascal {
 
+// Forward declaration
+class UnitLoader;
+
 // C++ code generator that converts Pascal AST to C++ code
 class CppGenerator : public ASTVisitor {
 public:
-    explicit CppGenerator(std::shared_ptr<SymbolTable> symbolTable);
+    explicit CppGenerator(std::shared_ptr<SymbolTable> symbolTable, UnitLoader* unitLoader = nullptr);
     
     // Generate C++ code for the entire program
     std::string generate(Program& program);
@@ -48,10 +52,12 @@ public:
     void visit(FunctionDeclaration& node) override;
     
     void visit(UsesClause& node) override;
+    void visit(Unit& node) override;
     void visit(Program& node) override;
     
 private:
     std::shared_ptr<SymbolTable> symbolTable_;
+    UnitLoader* unitLoader_;
     std::ostringstream output_;
     int indentLevel_;
     std::string currentFunction_;
@@ -116,6 +122,7 @@ private:
     
     // Utility methods
     bool isBuiltinFunction(const std::string& name);
+    bool isStringExpression(Expression* expr);
     std::string escapeCppString(const std::string& str);
 };
 

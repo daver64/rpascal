@@ -341,6 +341,35 @@ std::string UsesClause::toString() const {
     return oss.str();
 }
 
+// Unit
+void Unit::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string Unit::toString() const {
+    std::ostringstream oss;
+    oss << "Unit(" << name_;
+    if (usesClause_) {
+        oss << " " << usesClause_->toString();
+    }
+    oss << " Interface[";
+    for (size_t i = 0; i < interfaceDeclarations_.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << interfaceDeclarations_[i]->toString();
+    }
+    oss << "] Implementation[";
+    for (size_t i = 0; i < implementationDeclarations_.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << implementationDeclarations_[i]->toString();
+    }
+    oss << "]";
+    if (initializationBlock_) {
+        oss << " " << initializationBlock_->toString();
+    }
+    oss << ")";
+    return oss.str();
+}
+
 // Program
 void Program::accept(ASTVisitor& visitor) {
     visitor.visit(*this);

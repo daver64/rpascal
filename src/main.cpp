@@ -175,13 +175,13 @@ std::unique_ptr<Program> parseSource(std::unique_ptr<Lexer> lexer, bool showAST,
 }
 
 // Perform semantic analysis
-bool performSemanticAnalysis(std::unique_ptr<Program>& program, bool verbose, std::shared_ptr<SymbolTable>& symbolTable) {
+bool performSemanticAnalysis(std::unique_ptr<Program>& program, bool verbose, std::shared_ptr<SymbolTable>& symbolTable, std::unique_ptr<SemanticAnalyzer>& analyzer) {
     if (verbose) {
         std::cout << "Performing semantic analysis...\n";
     }
     
     symbolTable = std::make_shared<SymbolTable>();
-    auto analyzer = std::make_unique<SemanticAnalyzer>(symbolTable);
+    analyzer = std::make_unique<SemanticAnalyzer>(symbolTable);
     
     bool success = analyzer->analyze(*program);
     
@@ -201,12 +201,12 @@ bool performSemanticAnalysis(std::unique_ptr<Program>& program, bool verbose, st
 }
 
 // Generate C++ code
-std::string generateCppCode(std::unique_ptr<Program>& program, std::shared_ptr<SymbolTable> symbolTable, bool verbose) {
+std::string generateCppCode(std::unique_ptr<Program>& program, std::shared_ptr<SymbolTable> symbolTable, SemanticAnalyzer* analyzer, bool verbose) {
     if (verbose) {
         std::cout << "Generating C++ code...\n";
     }
     
-    auto generator = std::make_unique<CppGenerator>(symbolTable);
+    auto generator = std::make_unique<CppGenerator>(symbolTable, analyzer->getUnitLoader());
     std::string cppCode = generator->generate(*program);
     
     if (verbose) {
@@ -555,14 +555,15 @@ int compile(const CompilerOptions& options) {
             return 1;
         }
         
-        // Semantic Analysis
+        // Perform semantic analysis
         std::shared_ptr<SymbolTable> symbolTable;
-        if (!performSemanticAnalysis(program, options.verbose, symbolTable)) {
+        std::unique_ptr<SemanticAnalyzer> analyzer;
+        if (!performSemanticAnalysis(program, options.verbose, symbolTable, analyzer)) {
             return 1;
         }
         
         // Generate C++ Code
-        std::string cppCode = generateCppCode(program, symbolTable, options.verbose);
+        std::string cppCode = generateCppCode(program, symbolTable, analyzer.get(), options.verbose);
         
         if (options.verbose) {
             std::cout << "Compilation successful!\n";

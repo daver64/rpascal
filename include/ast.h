@@ -567,6 +567,35 @@ private:
     std::vector<std::string> units_;
 };
 
+// Unit node (for unit files)
+class Unit : public ASTNode {
+public:
+    Unit(const std::string& name, std::unique_ptr<UsesClause> usesClause,
+         std::vector<std::unique_ptr<Declaration>> interfaceDeclarations,
+         std::vector<std::unique_ptr<Declaration>> implementationDeclarations,
+         std::unique_ptr<CompoundStatement> initializationBlock)
+        : name_(name), usesClause_(std::move(usesClause)),
+          interfaceDeclarations_(std::move(interfaceDeclarations)),
+          implementationDeclarations_(std::move(implementationDeclarations)),
+          initializationBlock_(std::move(initializationBlock)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::string& getName() const { return name_; }
+    const UsesClause* getUsesClause() const { return usesClause_.get(); }
+    const std::vector<std::unique_ptr<Declaration>>& getInterfaceDeclarations() const { return interfaceDeclarations_; }
+    const std::vector<std::unique_ptr<Declaration>>& getImplementationDeclarations() const { return implementationDeclarations_; }
+    const CompoundStatement* getInitializationBlock() const { return initializationBlock_.get(); }
+    
+private:
+    std::string name_;
+    std::unique_ptr<UsesClause> usesClause_;
+    std::vector<std::unique_ptr<Declaration>> interfaceDeclarations_;
+    std::vector<std::unique_ptr<Declaration>> implementationDeclarations_;
+    std::unique_ptr<CompoundStatement> initializationBlock_;
+};
+
 // Program node (root of AST)
 class Program : public ASTNode {
 public:
@@ -625,6 +654,7 @@ public:
     virtual void visit(FunctionDeclaration& node) = 0;
     
     virtual void visit(UsesClause& node) = 0;
+    virtual void visit(Unit& node) = 0;
     virtual void visit(Program& node) = 0;
 };
 

@@ -5,7 +5,7 @@ namespace rpascal {
 
 SemanticAnalyzer::SemanticAnalyzer(std::shared_ptr<SymbolTable> symbolTable)
     : symbolTable_(symbolTable), currentExpressionType_(DataType::UNKNOWN), 
-      currentPointeeType_(DataType::UNKNOWN) {}
+      currentPointeeType_(DataType::UNKNOWN), unitLoader_(std::make_unique<UnitLoader>()) {}
 
 bool SemanticAnalyzer::analyze(Program& program) {
     errors_.clear();
@@ -586,7 +586,7 @@ void SemanticAnalyzer::visit(ProcedureDeclaration& node) {
         
         // Add parameters to procedure symbol
         for (const auto& param : node.getParameters()) {
-            DataType paramType = SymbolTable::stringToDataType(param->getType());
+            DataType paramType = symbolTable_->resolveDataType(param->getType());
             procedureSymbol->addParameter(param->getName(), paramType);
         }
         
@@ -610,7 +610,7 @@ void SemanticAnalyzer::visit(ProcedureDeclaration& node) {
         
         // Add parameters to procedure symbol
         for (const auto& param : node.getParameters()) {
-            DataType paramType = SymbolTable::stringToDataType(param->getType());
+            DataType paramType = symbolTable_->resolveDataType(param->getType());
             procedureSymbol->addParameter(param->getName(), paramType);
         }
         
@@ -623,7 +623,7 @@ void SemanticAnalyzer::visit(ProcedureDeclaration& node) {
     
     // Add parameters to current scope
     for (const auto& param : node.getParameters()) {
-        DataType paramType = SymbolTable::stringToDataType(param->getType());
+        DataType paramType = symbolTable_->resolveDataType(param->getType());
         symbolTable_->define(param->getName(), SymbolType::PARAMETER, paramType);
     }
     
@@ -640,7 +640,7 @@ void SemanticAnalyzer::visit(ProcedureDeclaration& node) {
 }
 
 void SemanticAnalyzer::visit(FunctionDeclaration& node) {
-    DataType returnType = SymbolTable::stringToDataType(node.getReturnType());
+    DataType returnType = symbolTable_->resolveDataType(node.getReturnType());
     if (returnType == DataType::UNKNOWN) {
         addError("Unknown return type: " + node.getReturnType());
         returnType = DataType::VOID;
@@ -663,7 +663,7 @@ void SemanticAnalyzer::visit(FunctionDeclaration& node) {
         
         // Add parameters to function symbol
         for (const auto& param : node.getParameters()) {
-            DataType paramType = SymbolTable::stringToDataType(param->getType());
+            DataType paramType = symbolTable_->resolveDataType(param->getType());
             functionSymbol->addParameter(param->getName(), paramType);
         }
         
@@ -693,7 +693,7 @@ void SemanticAnalyzer::visit(FunctionDeclaration& node) {
         
         // Add parameters to function symbol
         for (const auto& param : node.getParameters()) {
-            DataType paramType = SymbolTable::stringToDataType(param->getType());
+            DataType paramType = symbolTable_->resolveDataType(param->getType());
             functionSymbol->addParameter(param->getName(), paramType);
         }
         
@@ -706,7 +706,7 @@ void SemanticAnalyzer::visit(FunctionDeclaration& node) {
     
     // Add parameters to current scope
     for (const auto& param : node.getParameters()) {
-        DataType paramType = SymbolTable::stringToDataType(param->getType());
+        DataType paramType = symbolTable_->resolveDataType(param->getType());
         symbolTable_->define(param->getName(), SymbolType::PARAMETER, paramType);
     }
     
@@ -730,6 +730,11 @@ void SemanticAnalyzer::visit(FunctionDeclaration& node) {
 }
 
 void SemanticAnalyzer::visit(Program& node) {
+    // Process uses clause first
+    if (node.getUsesClause()) {
+        node.getUsesClause()->accept(*this);
+    }
+    
     // Analyze declarations
     for (const auto& decl : node.getDeclarations()) {
         decl->accept(*this);
@@ -1235,15 +1240,67 @@ std::string SemanticAnalyzer::getFieldTypeFromRecord(const std::string& fieldNam
 }
 
 void SemanticAnalyzer::visit(UsesClause& node) {
-    // For now, just validate that the units are known
-    // Later we can implement actual unit loading and dependency checking
+    // Load and process units
     for (const std::string& unitName : node.getUnits()) {
+        std::cout << "DEBUG: Processing unit: " << unitName << std::endl;
+        
         // Check if unit is a standard unit (System, Dos, Crt)
-        if (unitName != "System" && unitName != "Dos" && unitName != "Crt") {
-            // For now, just issue a warning for unknown units
-            // In a full implementation, we'd load the unit file
-            // addError("Unknown unit: " + unitName);
+        if (unitName == "System" || unitName == "Dos" || unitName == "Crt") {
+            std::cout << "DEBUG: " << unitName << " is a built-in unit" << std::endl;
+            // Built-in units are handled automatically
+            continue;
         }
+        
+        std::cout << "DEBUG: Attempting to load custom unit: " << unitName << std::endl;
+        
+        // Try to load custom unit
+        if (!unitLoader_->isUnitLoaded(unitName)) {
+            std::cout << "DEBUG: Unit not loaded, loading now..." << std::endl;
+            unitLoader_->loadUnit(unitName);
+            
+            // Check if loading succeeded
+            if (!unitLoader_->isUnitLoaded(unitName)) {
+                std::cout << "DEBUG: Failed to load unit " << unitName << std::endl;
+                addError("Failed to load unit: " + unitName);
+                continue;
+            }
+            std::cout << "DEBUG: Successfully loaded unit " << unitName << std::endl;
+        }
+        
+        // Get the loaded unit and process its interface declarations
+        Unit* loadedUnit = unitLoader_->getLoadedUnit(unitName);
+        if (loadedUnit) {
+            std::cout << "DEBUG: Processing interface declarations for " << unitName << std::endl;
+            // Import symbols from the unit's interface section
+            for (const auto& decl : loadedUnit->getInterfaceDeclarations()) {
+                // Process the declaration to add symbols to our symbol table
+                decl->accept(*this);
+            }
+        } else {
+            std::cout << "DEBUG: Could not get loaded unit " << unitName << std::endl;
+        }
+    }
+}
+
+void SemanticAnalyzer::visit(Unit& node) {
+    // Process interface declarations first
+    for (const auto& decl : node.getInterfaceDeclarations()) {
+        decl->accept(*this);
+    }
+    
+    // Process uses clause if present - need to cast away const
+    if (node.getUsesClause()) {
+        const_cast<UsesClause*>(node.getUsesClause())->accept(*this);
+    }
+    
+    // Process implementation declarations
+    for (const auto& decl : node.getImplementationDeclarations()) {
+        decl->accept(*this);
+    }
+    
+    // Process initialization block if present - need to cast away const
+    if (node.getInitializationBlock()) {
+        const_cast<CompoundStatement*>(node.getInitializationBlock())->accept(*this);
     }
 }
 

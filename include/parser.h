@@ -16,6 +16,9 @@ public:
     // Parse the entire program
     std::unique_ptr<Program> parseProgram();
     
+    // Parse a unit file
+    std::unique_ptr<Unit> parseUnit();
+    
     // Error handling
     bool hasErrors() const { return !errors_.empty(); }
     const std::vector<std::string>& getErrors() const { return errors_; }
@@ -38,10 +41,13 @@ private:
     
     // Parsing methods
     std::unique_ptr<UsesClause> parseUsesClause();
-    std::unique_ptr<Declaration> parseDeclaration();
+    std::unique_ptr<Declaration> parseDeclaration(bool isInterface = false);
     std::unique_ptr<ConstantDeclaration> parseConstantDeclaration();
     std::unique_ptr<VariableDeclaration> parseVariableDeclaration();
+    std::unique_ptr<Declaration> parseTypeDeclaration();
     std::vector<std::unique_ptr<VariableDeclaration>> parseLocalVariables();
+    std::unique_ptr<ProcedureDeclaration> parseProcedureDeclaration(bool isInterface = false);
+    std::unique_ptr<FunctionDeclaration> parseFunctionDeclaration(bool isInterface = false);
     std::unique_ptr<ProcedureDeclaration> parseProcedureDeclaration();
     std::unique_ptr<FunctionDeclaration> parseFunctionDeclaration();
     

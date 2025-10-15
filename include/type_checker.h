@@ -2,6 +2,11 @@
 
 #include "ast.h"
 #include "symbol_table.h"
+#pragma once
+
+#include "ast.h"
+#include "symbol_table.h"
+#include "unit_loader.h"
 #include <memory>
 #include <vector>
 #include <string>
@@ -22,6 +27,9 @@ public:
     
     // Get symbol table for further use
     std::shared_ptr<SymbolTable> getSymbolTable() const { return symbolTable_; }
+    
+    // Get unit loader for further use
+    UnitLoader* getUnitLoader() const { return unitLoader_.get(); }
     
     // Visitor pattern implementation
     void visit(LiteralExpression& node) override;
@@ -53,6 +61,7 @@ public:
     void visit(FunctionDeclaration& node) override;
     
     void visit(UsesClause& node) override;
+    void visit(Unit& node) override;
     void visit(Program& node) override;
     
 private:
@@ -69,6 +78,9 @@ private:
         DataType recordType;         // Type of the with variable
     };
     std::vector<WithContext> withContextStack_;
+    
+    // Unit loading system
+    std::unique_ptr<UnitLoader> unitLoader_;
     
     // Helper methods
     void addError(const std::string& message);

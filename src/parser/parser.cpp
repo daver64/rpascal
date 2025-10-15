@@ -93,13 +93,13 @@ std::unique_ptr<Program> Parser::parseProgram() {
                 } while (check(TokenType::IDENTIFIER) && !isAtEnd());
             } else if (check(TokenType::PROCEDURE)) {
                 advance(); // consume PROCEDURE
-                auto procDecl = parseProcedureDeclaration();
+                auto procDecl = parseProcedureDeclaration(false); // false for program context
                 if (procDecl) {
                     declarations.push_back(std::move(procDecl));
                 }
             } else if (check(TokenType::FUNCTION)) {
                 advance(); // consume FUNCTION
-                auto funcDecl = parseFunctionDeclaration();
+                auto funcDecl = parseFunctionDeclaration(false); // false for program context
                 if (funcDecl) {
                     declarations.push_back(std::move(funcDecl));
                 }
@@ -120,6 +120,98 @@ std::unique_ptr<Program> Parser::parseProgram() {
         
     } catch (const std::exception& e) {
         addError("Failed to parse program: " + std::string(e.what()));
+        return nullptr;
+    }
+}
+
+std::unique_ptr<Unit> Parser::parseUnit() {
+    try {
+        // Parse "unit" keyword
+        consume(TokenType::UNIT, "Expected 'unit'");
+        
+        // Parse unit name
+        Token nameToken = consume(TokenType::IDENTIFIER, "Expected unit name");
+        std::string unitName = nameToken.getValue();
+        
+        // Parse semicolon
+        consume(TokenType::SEMICOLON, "Expected ';' after unit name");
+        
+        // Parse interface section
+        consume(TokenType::INTERFACE, "Expected 'interface'");
+        
+        // Parse optional uses clause in interface
+        std::unique_ptr<UsesClause> usesClause = nullptr;
+        if (match(TokenType::USES)) {
+            usesClause = parseUsesClause();
+        }
+        
+        // Parse interface declarations
+        std::vector<std::unique_ptr<Declaration>> interfaceDeclarations;
+        while (!check(TokenType::IMPLEMENTATION) && !isAtEnd()) {
+            auto decl = parseDeclaration(true); // Pass true for interface context
+            if (decl) {
+                interfaceDeclarations.push_back(std::move(decl));
+            }
+        }
+        
+        // Parse implementation section
+        consume(TokenType::IMPLEMENTATION, "Expected 'implementation'");
+        
+        // Parse implementation declarations
+        std::vector<std::unique_ptr<Declaration>> implementationDeclarations;
+        while (!check(TokenType::BEGIN) && !check(TokenType::END) && !isAtEnd()) {
+            auto decl = parseDeclaration(false); // Pass false for implementation context
+            if (decl) {
+                implementationDeclarations.push_back(std::move(decl));
+            } else {
+                // If parseDeclaration failed, break out of the loop
+                break;
+            }
+        }
+        
+        // Parse optional initialization section
+        std::unique_ptr<CompoundStatement> initializationBlock = nullptr;
+        if (match(TokenType::BEGIN)) {
+            // For unit initialization, we parse statements until END, but don't consume the END
+            // because it's the unit's final END
+            std::vector<std::unique_ptr<Statement>> statements;
+            
+            while (!check(TokenType::END) && !isAtEnd()) {
+                auto stmt = parseStatement();
+                if (stmt) {
+                    statements.push_back(std::move(stmt));
+                }
+                
+                // Optional semicolon between statements
+                if (match(TokenType::SEMICOLON)) {
+                    // Continue parsing more statements
+                } else if (check(TokenType::END)) {
+                    // End of initialization section
+                    break;
+                } else {
+                    addError("Expected ';' or 'end' in initialization section");
+                    break;
+                }
+            }
+            
+            initializationBlock = std::make_unique<CompoundStatement>(std::move(statements));
+        } else {
+            // Create empty compound statement if no BEGIN section
+            std::vector<std::unique_ptr<Statement>> emptyStatements;
+            initializationBlock = std::make_unique<CompoundStatement>(std::move(emptyStatements));
+        }
+        
+        // Parse final "end."
+        consume(TokenType::END, "Expected 'end'");
+        consume(TokenType::PERIOD, "Expected '.' after unit end");
+        
+        return std::make_unique<Unit>(unitName, std::move(usesClause), 
+                                     std::move(interfaceDeclarations),
+                                     std::move(implementationDeclarations),
+                                     std::move(initializationBlock));
+                                     
+    } catch (const std::exception& e) {
+        addError("Failed to parse unit: " + std::string(e.what()));
         return nullptr;
     }
 }
@@ -189,18 +281,20 @@ void Parser::synchronize() {
     }
 }
 
-std::unique_ptr<Declaration> Parser::parseDeclaration() {
+std::unique_ptr<Declaration> Parser::parseDeclaration(bool isInterface) {
     try {
         if (match(TokenType::CONST)) {
             return parseConstantDeclaration();
         } else if (match(TokenType::VAR)) {
             return parseVariableDeclaration();
+        } else if (match(TokenType::TYPE)) {
+            return parseTypeDeclaration();
         } else if (check(TokenType::PROCEDURE)) {
             advance(); // consume PROCEDURE
-            return parseProcedureDeclaration();
+            return parseProcedureDeclaration(isInterface);
         } else if (check(TokenType::FUNCTION)) {
             advance(); // consume FUNCTION
-            return parseFunctionDeclaration();
+            return parseFunctionDeclaration(isInterface);
         } else {
             addError("Expected declaration");
             synchronize();
@@ -228,6 +322,48 @@ std::unique_ptr<VariableDeclaration> Parser::parseVariableDeclaration() {
     consume(TokenType::SEMICOLON, "Expected ';' after variable declaration");
     
     return std::make_unique<VariableDeclaration>(nameToken.getValue(), typeName);
+}
+
+std::unique_ptr<Declaration> Parser::parseTypeDeclaration() {
+    Token nameToken = consume(TokenType::IDENTIFIER, "Expected type name");
+    consume(TokenType::EQUAL, "Expected '=' after type name");
+    
+    // For now, we'll handle record types
+    if (check(TokenType::RECORD)) {
+        advance(); // consume RECORD
+        
+        // Parse record fields
+        std::vector<RecordField> fields;
+        while (!check(TokenType::END) && !isAtEnd()) {
+            // Parse field names (can be multiple with same type)
+            std::vector<std::string> fieldNames;
+            fieldNames.push_back(consume(TokenType::IDENTIFIER, "Expected field name").getValue());
+            
+            while (match(TokenType::COMMA)) {
+                fieldNames.push_back(consume(TokenType::IDENTIFIER, "Expected field name").getValue());
+            }
+            
+            consume(TokenType::COLON, "Expected ':' after field name(s)");
+            std::string fieldType = parseTypeName();
+            consume(TokenType::SEMICOLON, "Expected ';' after field declaration");
+            
+            // Create a RecordField for each field
+            for (const auto& fieldName : fieldNames) {
+                fields.emplace_back(fieldName, fieldType);
+            }
+        }
+        
+        consume(TokenType::END, "Expected 'end' after record fields");
+        consume(TokenType::SEMICOLON, "Expected ';' after type declaration");
+        
+        return std::make_unique<RecordTypeDefinition>(nameToken.getValue(), std::move(fields));
+    } else {
+        // Handle simple type aliases
+        std::string aliasType = parseTypeName();
+        consume(TokenType::SEMICOLON, "Expected ';' after type declaration");
+        
+        return std::make_unique<TypeDefinition>(nameToken.getValue(), aliasType);
+    }
 }
 
 std::vector<std::unique_ptr<VariableDeclaration>> Parser::parseLocalVariables() {
@@ -263,7 +399,7 @@ std::vector<std::unique_ptr<VariableDeclaration>> Parser::parseLocalVariables() 
     return localVars;
 }
 
-std::unique_ptr<ProcedureDeclaration> Parser::parseProcedureDeclaration() {
+std::unique_ptr<ProcedureDeclaration> Parser::parseProcedureDeclaration(bool isInterface) {
     Token nameToken = consume(TokenType::IDENTIFIER, "Expected procedure name");
     
     std::vector<std::unique_ptr<VariableDeclaration>> parameters;
@@ -273,6 +409,13 @@ std::unique_ptr<ProcedureDeclaration> Parser::parseProcedureDeclaration() {
     }
     
     consume(TokenType::SEMICOLON, "Expected ';' after procedure header");
+    
+    // In interface section, we only need the signature
+    if (isInterface) {
+        std::vector<std::unique_ptr<VariableDeclaration>> localVariables;
+        auto body = std::make_unique<CompoundStatement>(std::vector<std::unique_ptr<Statement>>());
+        return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(body), true);
+    }
     
     // Check for forward declaration
     if (match(TokenType::FORWARD)) {
@@ -292,7 +435,7 @@ std::unique_ptr<ProcedureDeclaration> Parser::parseProcedureDeclaration() {
     return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(body));
 }
 
-std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
+std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration(bool isInterface) {
     Token nameToken = consume(TokenType::IDENTIFIER, "Expected function name");
     
     std::vector<std::unique_ptr<VariableDeclaration>> parameters;
@@ -304,6 +447,13 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
     consume(TokenType::COLON, "Expected ':' before return type");
     std::string returnType = parseTypeName();
     consume(TokenType::SEMICOLON, "Expected ';' after function header");
+    
+    // In interface section, we only need the signature
+    if (isInterface) {
+        std::vector<std::unique_ptr<VariableDeclaration>> localVariables;
+        auto body = std::make_unique<CompoundStatement>(std::vector<std::unique_ptr<Statement>>());
+        return std::make_unique<FunctionDeclaration>(nameToken.getValue(), std::move(parameters), returnType, std::move(localVariables), std::move(body), true);
+    }
     
     // Check for forward declaration
     if (match(TokenType::FORWARD)) {

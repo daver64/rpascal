@@ -72,6 +72,7 @@ set(PARSER_SOURCES
 set(SEMANTIC_SOURCES
     src/semantic/symbol_table.cpp
     src/semantic/type_checker.cpp
+    src/unit_loader.cpp
 )
 
 set(CODEGEN_SOURCES

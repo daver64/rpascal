@@ -47,6 +47,8 @@ enum class TokenType {
     PACKED,
     FORWARD,
     EXTERNAL,
+    INTERFACE,
+    IMPLEMENTATION,
     
     // Data types
     INTEGER,

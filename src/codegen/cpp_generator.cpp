@@ -3,8 +3,8 @@
 
 namespace rpascal {
 
-CppGenerator::CppGenerator(std::shared_ptr<SymbolTable> symbolTable)
-    : symbolTable_(symbolTable), indentLevel_(0) {}
+CppGenerator::CppGenerator(std::shared_ptr<SymbolTable> symbolTable, UnitLoader* unitLoader)
+    : symbolTable_(symbolTable), unitLoader_(unitLoader), indentLevel_(0) {}
 
 std::string CppGenerator::generate(Program& program) {
     output_.str("");
@@ -169,15 +169,19 @@ void CppGenerator::visit(BinaryExpression& node) {
         }
     }
     
-    // Handle string concatenation
+    // Handle string concatenation vs numeric addition
     if (node.getOperator().getType() == TokenType::PLUS) {
-        // Use std::string constructor to ensure at least one operand is a std::string
-        emit("(std::string(");
-        node.getLeft()->accept(*this);
-        emit(") + ");
-        node.getRight()->accept(*this);
-        emit(")");
-        return;
+        // Only use string concatenation if at least one operand is actually a string
+        if (isStringExpression(node.getLeft()) || isStringExpression(node.getRight())) {
+            // Use std::string constructor to ensure at least one operand is a std::string
+            emit("(std::string(");
+            node.getLeft()->accept(*this);
+            emit(") + ");
+            node.getRight()->accept(*this);
+            emit(")");
+            return;
+        }
+        // Otherwise fall through to standard numeric addition
     }
     
     // Standard binary operators
@@ -723,6 +727,55 @@ void CppGenerator::visit(Program& node) {
     
     decreaseIndent();
     emitLine("}");
+}
+
+bool CppGenerator::isStringExpression(Expression* expr) {
+    if (!expr) return false;
+    
+    // Check if it's a string literal
+    if (auto literal = dynamic_cast<LiteralExpression*>(expr)) {
+        return literal->getToken().getType() == TokenType::STRING_LITERAL;
+    }
+    
+    // Check if it's an identifier with string type
+    if (auto ident = dynamic_cast<IdentifierExpression*>(expr)) {
+        if (symbolTable_) {
+            auto symbol = symbolTable_->lookup(ident->getName());
+            if (symbol) {
+                return symbol->getDataType() == DataType::STRING;
+            }
+        }
+    }
+    
+    // Check if it's a function call that returns a string
+    if (auto call = dynamic_cast<CallExpression*>(expr)) {
+        // Get function name from the callee
+        std::string funcName;
+        if (auto ident = dynamic_cast<IdentifierExpression*>(call->getCallee())) {
+            funcName = ident->getName();
+        }
+        
+        // Check for known string-returning functions
+        if (funcName == "concat" || funcName == "copy" || funcName == "chr" || 
+            funcName == "upcase" || funcName == "lowercase") {
+            return true;
+        }
+        
+        // Look up function in symbol table
+        if (!funcName.empty() && symbolTable_) {
+            auto symbol = symbolTable_->lookup(funcName);
+            if (symbol && symbol->getSymbolType() == SymbolType::FUNCTION) {
+                return symbol->getDataType() == DataType::STRING;
+            }
+        }
+    }
+    
+    // Check if it's array access on a string (string indexing)
+    if (auto arrayAccess = dynamic_cast<ArrayIndexExpression*>(expr)) {
+        return isStringExpression(arrayAccess->getArray());
+    }
+    
+    return false;
 }
 
 void CppGenerator::emit(const std::string& code) {
@@ -1734,10 +1787,77 @@ void CppGenerator::visit(UsesClause& node) {
             emitLine("#include <conio.h>     // CRT unit support (Windows)");
             emitLine("#include <windows.h>   // Console API");
         } else {
-            emitLine("// TODO: Include unit " + unitName);
+            // Generate C++ code for custom units
+            if (unitLoader_ && unitLoader_->isUnitLoaded(unitName)) {
+                emitLine("// Unit: " + unitName);
+                Unit* loadedUnit = unitLoader_->getLoadedUnit(unitName);
+                if (loadedUnit) {
+                    emitLine("// Interface declarations");
+                    // Generate interface declarations
+                    for (const auto& decl : loadedUnit->getInterfaceDeclarations()) {
+                        // For function/procedure declarations in interfaces, generate prototypes
+                        if (auto funcDecl = dynamic_cast<FunctionDeclaration*>(decl.get())) {
+                            std::string returnType = mapPascalTypeToCpp(funcDecl->getReturnType());
+                            emitLine(returnType + " " + funcDecl->getName() + "(" + generateParameterList(funcDecl->getParameters()) + ");");
+                        } else if (auto procDecl = dynamic_cast<ProcedureDeclaration*>(decl.get())) {
+                            emitLine("void " + procDecl->getName() + "(" + generateParameterList(procDecl->getParameters()) + ");");
+                        } else {
+                            // For other declarations (types, constants, variables), use normal generation
+                            decl->accept(*this);
+                        }
+                    }
+                    
+                    emitLine("// Implementation");
+                    // Generate implementation declarations (function/procedure bodies)
+                    for (const auto& decl : loadedUnit->getImplementationDeclarations()) {
+                        decl->accept(*this);
+                    }
+                }
+            } else {
+                emitLine("// TODO: Include unit " + unitName);
+            }
         }
     }
     emitLine("");
+}
+
+void CppGenerator::visit(Unit& node) {
+    // Generate C++ header and implementation for the unit
+    
+    // Generate header section from interface declarations
+    emitLine("// Unit: " + node.getName());
+    emitLine("// Interface declarations");
+    
+    for (const auto& decl : node.getInterfaceDeclarations()) {
+        decl->accept(*this);
+    }
+    
+    emitLine("");
+    emitLine("// Implementation declarations");
+    
+    // Generate implementation section
+    for (const auto& decl : node.getImplementationDeclarations()) {
+        decl->accept(*this);
+    }
+    
+    // Generate initialization code if present
+    if (node.getInitializationBlock()) {
+        emitLine("");
+        emitLine("// Unit initialization");
+        emitLine("class " + node.getName() + "_Initializer {");
+        emitLine("public:");
+        emitLine("    " + node.getName() + "_Initializer() {");
+        
+        // Generate initialization code
+        for (const auto& stmt : node.getInitializationBlock()->getStatements()) {
+            emitLine("        ");
+            stmt->accept(*this);
+        }
+        
+        emitLine("    }");
+        emitLine("};");
+        emitLine("static " + node.getName() + "_Initializer " + node.getName() + "_init;");
+    }
 }
 
 } // namespace rpascal
