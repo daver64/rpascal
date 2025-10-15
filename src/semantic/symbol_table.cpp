@@ -132,6 +132,7 @@ DataType SymbolTable::stringToDataType(const std::string& typeStr) {
     if (lowerType == "char") return DataType::CHAR;
     if (lowerType == "string") return DataType::STRING;
     if (lowerType == "void") return DataType::VOID;
+    if (lowerType == "text" || lowerType == "file") return DataType::FILE_TYPE;
     
     return DataType::UNKNOWN;
 }
@@ -162,6 +163,7 @@ std::string SymbolTable::dataTypeToString(DataType type) {
         case DataType::VOID: return "void";
         case DataType::CUSTOM: return "custom";
         case DataType::POINTER: return "pointer";
+        case DataType::FILE_TYPE: return "file";
         case DataType::UNKNOWN: return "unknown";
         default: return "unknown";
     }
@@ -263,6 +265,29 @@ void SymbolTable::initializeBuiltinSymbols() {
     deleteFunc->addParameter("pos", DataType::INTEGER);
     deleteFunc->addParameter("length", DataType::INTEGER);
     define("delete", deleteFunc);
+    
+    // File operation functions
+    auto assignFile = std::make_shared<Symbol>("assign", SymbolType::PROCEDURE, DataType::VOID, 0);
+    assignFile->addParameter("f", DataType::FILE_TYPE); // var parameter
+    assignFile->addParameter("filename", DataType::STRING);
+    define("assign", assignFile);
+    
+    auto resetFile = std::make_shared<Symbol>("reset", SymbolType::PROCEDURE, DataType::VOID, 0);
+    resetFile->addParameter("f", DataType::FILE_TYPE); // var parameter
+    define("reset", resetFile);
+    
+    auto rewriteFile = std::make_shared<Symbol>("rewrite", SymbolType::PROCEDURE, DataType::VOID, 0);
+    rewriteFile->addParameter("f", DataType::FILE_TYPE); // var parameter
+    define("rewrite", rewriteFile);
+    
+    auto closeFile = std::make_shared<Symbol>("close", SymbolType::PROCEDURE, DataType::VOID, 0);
+    closeFile->addParameter("f", DataType::FILE_TYPE); // var parameter
+    define("close", closeFile);
+    
+    auto eofFunc = std::make_shared<Symbol>("eof", SymbolType::FUNCTION, DataType::BOOLEAN, 0);
+    eofFunc->addParameter("f", DataType::FILE_TYPE);
+    eofFunc->setReturnType(DataType::BOOLEAN);
+    define("eof", eofFunc);
 }
 
 } // namespace rpascal

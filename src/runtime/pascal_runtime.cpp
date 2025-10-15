@@ -1,6 +1,33 @@
 #include "../include/pascal_runtime.h"
+#include <ios>
 
 namespace rpascal {
+
+// PascalFile implementation
+void PascalFile::assign(const std::string& filename) {
+    filename_ = filename;
+    // Just store the filename, don't open yet (like Pascal)
+}
+
+void PascalFile::reset() {
+    close(); // Close if already open
+    stream_.open(filename_, std::ios::in);
+}
+
+void PascalFile::rewrite() {
+    close(); // Close if already open  
+    stream_.open(filename_, std::ios::out);
+}
+
+void PascalFile::close() {
+    if (stream_.is_open()) {
+        stream_.close();
+    }
+}
+
+bool PascalFile::eof() const {
+    return stream_.eof();
+}
 
 // Pascal string manipulation functions
 void pascal_insert(const std::string& substr, std::string& str, int pos) {

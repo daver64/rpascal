@@ -694,7 +694,8 @@ std::string Parser::parseTypeName() {
     // Accept both IDENTIFIER and type keywords as type names
     if (check(TokenType::IDENTIFIER) || 
         check(TokenType::INTEGER) || check(TokenType::REAL) || 
-        check(TokenType::BOOLEAN) || check(TokenType::CHAR)) {
+        check(TokenType::BOOLEAN) || check(TokenType::CHAR) ||
+        check(TokenType::TEXT) || check(TokenType::FILE)) {
         Token typeToken = currentToken_;
         advance();
         return typeToken.getValue();

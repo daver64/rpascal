@@ -43,6 +43,7 @@ enum class TokenType {
     ARRAY,
     SET,
     FILE,
+    TEXT,           // text file type
     PACKED,
     FORWARD,
     EXTERNAL,

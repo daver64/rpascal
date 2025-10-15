@@ -27,6 +27,7 @@ enum class DataType {
     VOID,
     CUSTOM,    // User-defined types (records, arrays, enums)
     POINTER,   // Pointer types (^T)
+    FILE_TYPE, // File types (text, typed files)
     UNKNOWN
 };
 

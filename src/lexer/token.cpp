@@ -35,6 +35,7 @@ const std::unordered_map<std::string, TokenType> Keywords::keywords_ = {
     {"array", TokenType::ARRAY},
     {"set", TokenType::SET},
     {"file", TokenType::FILE},
+    {"text", TokenType::TEXT},
     {"packed", TokenType::PACKED},
     {"forward", TokenType::FORWARD},
     {"external", TokenType::EXTERNAL},
@@ -120,6 +121,7 @@ std::string Token::tokenTypeToString(TokenType type) {
         case TokenType::ARRAY: return "ARRAY";
         case TokenType::SET: return "SET";
         case TokenType::FILE: return "FILE";
+        case TokenType::TEXT: return "TEXT";
         case TokenType::PACKED: return "PACKED";
         case TokenType::FORWARD: return "FORWARD";
         case TokenType::EXTERNAL: return "EXTERNAL";
