@@ -42,6 +42,7 @@ public:
     
     void visit(ConstantDeclaration& node) override;
     void visit(TypeDefinition& node) override;
+    void visit(RecordTypeDefinition& node) override;
     void visit(VariableDeclaration& node) override;
     void visit(ProcedureDeclaration& node) override;
     void visit(FunctionDeclaration& node) override;

@@ -187,8 +187,75 @@ void SemanticAnalyzer::visit(FieldAccessExpression& node) {
     // Visit the object expression to ensure it's valid
     node.getObject()->accept(*this);
     
-    // For now, just accept any field access on custom types
-    // TODO: Add proper record field validation by storing record structure
+    // Save the object's type before we potentially overwrite currentExpressionType_
+    DataType objectType = currentExpressionType_;
+    
+    if (objectType == DataType::CUSTOM) {
+        std::string recordTypeName;
+        
+        // Case 1: Object is an identifier (e.g., p.x)
+        if (auto identifierExpr = dynamic_cast<IdentifierExpression*>(node.getObject())) {
+            auto symbol = symbolTable_->lookup(identifierExpr->getName());
+            if (symbol && symbol->getSymbolType() == SymbolType::VARIABLE) {
+                recordTypeName = symbol->getTypeName();
+            }
+        }
+        // Case 2: Object is another field access (e.g., c.center.x)
+        else if (auto fieldAccessExpr = dynamic_cast<FieldAccessExpression*>(node.getObject())) {
+            // For nested field access, we need to find the type of the field result
+            // The object field access should have already been processed and currentExpressionType_ set
+            // We need to find what record type this field belongs to
+            // This is more complex - for now, let's look up the field type from the outer expression
+            
+            // We need to determine the record type name from the nested field access
+            // This requires recursive type resolution, but for now, let's handle the common case
+            // where we have obj.field1.field2 and field1 is a record type
+            
+            // First get the object's object (for c.center.x, this would be 'c')
+            if (auto outerIdentifier = dynamic_cast<IdentifierExpression*>(fieldAccessExpr->getObject())) {
+                auto outerSymbol = symbolTable_->lookup(outerIdentifier->getName());
+                if (outerSymbol && outerSymbol->getSymbolType() == SymbolType::VARIABLE) {
+                    std::string outerRecordTypeName = outerSymbol->getTypeName();
+                    auto outerRecordTypeSymbol = symbolTable_->lookup(outerRecordTypeName);
+                    
+                    if (outerRecordTypeSymbol && outerRecordTypeSymbol->getSymbolType() == SymbolType::TYPE_DEF) {
+                        std::string outerRecordDef = outerRecordTypeSymbol->getTypeDefinition();
+                        
+                        // Get the type of the intermediate field (e.g., 'center' in c.center.x)
+                        std::string intermediateFieldType = getFieldTypeFromRecord(fieldAccessExpr->getFieldName(), outerRecordDef);
+                        if (!intermediateFieldType.empty()) {
+                            recordTypeName = intermediateFieldType;
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (!recordTypeName.empty()) {
+            auto recordTypeSymbol = symbolTable_->lookup(recordTypeName);
+            
+            if (recordTypeSymbol && recordTypeSymbol->getSymbolType() == SymbolType::TYPE_DEF) {
+                std::string recordDef = recordTypeSymbol->getTypeDefinition();
+                
+                // Check if the field exists in the record
+                if (isFieldInRecordDefinition(node.getFieldName(), recordDef)) {
+                    // Get the field's type
+                    std::string fieldTypeName = getFieldTypeFromRecord(node.getFieldName(), recordDef);
+                    DataType fieldType = symbolTable_->resolveDataType(fieldTypeName);
+                    currentExpressionType_ = fieldType;
+                    return;
+                } else {
+                    addError("Field '" + node.getFieldName() + "' not found in record type '" + recordTypeName + "'");
+                    currentExpressionType_ = DataType::UNKNOWN;
+                    return;
+                }
+            }
+        }
+    }
+    
+    // If we get here, field access failed
+    addError("Invalid field access: object is not a record type");
+    currentExpressionType_ = DataType::UNKNOWN;
 }
 
 void SemanticAnalyzer::visit(ArrayIndexExpression& node) {
@@ -411,6 +478,29 @@ void SemanticAnalyzer::visit(TypeDefinition& node) {
             }
             
             pos = commaPos + 1;
+        }
+    }
+}
+
+void SemanticAnalyzer::visit(RecordTypeDefinition& node) {
+    // Register the record type in the symbol table
+    auto symbol = std::make_shared<Symbol>(node.getName(), SymbolType::TYPE_DEF, DataType::CUSTOM);
+    
+    // Build the record definition string from the fields
+    std::string recordDef = "record ";
+    for (const auto& field : node.getFields()) {
+        recordDef += field.getName() + ":" + field.getType() + "; ";
+    }
+    recordDef += "end";
+    
+    symbol->setTypeDefinition(recordDef);
+    symbolTable_->define(node.getName(), symbol);
+    
+    // Validate that all field types exist
+    for (const auto& field : node.getFields()) {
+        DataType fieldType = symbolTable_->resolveDataType(field.getType());
+        if (fieldType == DataType::UNKNOWN) {
+            addError("Unknown field type '" + field.getType() + "' in record '" + node.getName() + "'");
         }
     }
 }

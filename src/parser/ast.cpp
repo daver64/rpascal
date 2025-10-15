@@ -248,6 +248,21 @@ std::string TypeDefinition::toString() const {
     return "TypeDefinition(" + name_ + " = " + definition_ + ")";
 }
 
+// RecordTypeDefinition
+void RecordTypeDefinition::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string RecordTypeDefinition::toString() const {
+    std::string result = "RecordTypeDefinition(" + name_ + " = record ";
+    for (size_t i = 0; i < fields_.size(); ++i) {
+        if (i > 0) result += "; ";
+        result += fields_[i].toString();
+    }
+    result += " end)";
+    return result;
+}
+
 // VariableDeclaration
 void VariableDeclaration::accept(ASTVisitor& visitor) {
     visitor.visit(*this);

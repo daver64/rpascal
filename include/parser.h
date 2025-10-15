@@ -69,6 +69,7 @@ private:
     // Helper methods
     std::string parseTypeName();
     std::string parseTypeDefinition();
+    std::vector<RecordField> parseRecordFields();
     std::vector<std::unique_ptr<VariableDeclaration>> parseParameterList();
     std::vector<std::unique_ptr<Expression>> parseArgumentList();
     

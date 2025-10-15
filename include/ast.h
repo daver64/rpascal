@@ -437,6 +437,39 @@ private:
     std::string definition_;
 };
 
+// Record field declaration
+class RecordField {
+public:
+    RecordField(const std::string& name, const std::string& type)
+        : name_(name), type_(type) {}
+    
+    const std::string& getName() const { return name_; }
+    const std::string& getType() const { return type_; }
+    
+    std::string toString() const { return name_ + ": " + type_; }
+    
+private:
+    std::string name_;
+    std::string type_;
+};
+
+// Record type definition  
+class RecordTypeDefinition : public Declaration {
+public:
+    RecordTypeDefinition(const std::string& name, std::vector<RecordField> fields)
+        : name_(name), fields_(std::move(fields)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::string& getName() const { return name_; }
+    const std::vector<RecordField>& getFields() const { return fields_; }
+    
+private:
+    std::string name_;
+    std::vector<RecordField> fields_;
+};
+
 class VariableDeclaration : public Declaration {
 public:
     VariableDeclaration(const std::string& name, const std::string& type, 
@@ -567,6 +600,7 @@ public:
     
     virtual void visit(ConstantDeclaration& node) = 0;
     virtual void visit(TypeDefinition& node) = 0;
+    virtual void visit(RecordTypeDefinition& node) = 0;
     virtual void visit(VariableDeclaration& node) = 0;
     virtual void visit(ProcedureDeclaration& node) = 0;
     virtual void visit(FunctionDeclaration& node) = 0;

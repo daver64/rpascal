@@ -39,11 +39,24 @@ std::unique_ptr<Program> Parser::parseProgram() {
                 do {
                     Token typeNameToken = consume(TokenType::IDENTIFIER, "Expected type name");
                     consume(TokenType::EQUAL, "Expected '=' after type name");
-                    std::string typeDefinition = parseTypeDefinition();
-                    consume(TokenType::SEMICOLON, "Expected ';' after type definition");
                     
-                    auto typeDecl = std::make_unique<TypeDefinition>(typeNameToken.getValue(), typeDefinition);
-                    declarations.push_back(std::move(typeDecl));
+                    // Check if this is a record type definition
+                    if (check(TokenType::RECORD)) {
+                        advance(); // consume 'record'
+                        std::vector<RecordField> fields = parseRecordFields();
+                        consume(TokenType::END, "Expected 'end' after record fields");
+                        consume(TokenType::SEMICOLON, "Expected ';' after record definition");
+                        
+                        auto recordDecl = std::make_unique<RecordTypeDefinition>(typeNameToken.getValue(), std::move(fields));
+                        declarations.push_back(std::move(recordDecl));
+                    } else {
+                        // Handle other type definitions (arrays, sets, etc.)
+                        std::string typeDefinition = parseTypeDefinition();
+                        consume(TokenType::SEMICOLON, "Expected ';' after type definition");
+                        
+                        auto typeDecl = std::make_unique<TypeDefinition>(typeNameToken.getValue(), typeDefinition);
+                        declarations.push_back(std::move(typeDecl));
+                    }
                     
                 } while (check(TokenType::IDENTIFIER) && !isAtEnd());
             } else if (match(TokenType::VAR)) {
@@ -950,6 +963,38 @@ int Parser::getOperatorPrecedence(TokenType type) const {
 bool Parser::isRightAssociative(TokenType) const {
     // Most Pascal operators are left-associative
     return false;
+}
+
+std::vector<RecordField> Parser::parseRecordFields() {
+    std::vector<RecordField> fields;
+    
+    // Parse record fields: name1, name2: type; name3: type;
+    while (!check(TokenType::END) && !isAtEnd()) {
+        // Parse field names (can be multiple names with same type)
+        std::vector<std::string> fieldNames;
+        
+        Token fieldName = consume(TokenType::IDENTIFIER, "Expected field name");
+        fieldNames.push_back(fieldName.getValue());
+        
+        // Handle multiple field names: name1, name2, name3: type
+        while (check(TokenType::COMMA)) {
+            advance(); // consume ','
+            Token nextName = consume(TokenType::IDENTIFIER, "Expected field name after ','");
+            fieldNames.push_back(nextName.getValue());
+        }
+        
+        consume(TokenType::COLON, "Expected ':' after field name(s)");
+        std::string fieldType = parseTypeName();
+        
+        // Create a field for each name with the same type
+        for (const std::string& name : fieldNames) {
+            fields.emplace_back(name, fieldType);
+        }
+        
+        consume(TokenType::SEMICOLON, "Expected ';' after field declaration");
+    }
+    
+    return fields;
 }
 
 } // namespace rpascal

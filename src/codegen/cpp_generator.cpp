@@ -497,6 +497,22 @@ void CppGenerator::visit(TypeDefinition& node) {
     }
 }
 
+void CppGenerator::visit(RecordTypeDefinition& node) {
+    // Generate C++ struct definition from RecordTypeDefinition AST node
+    emitLine("struct " + node.getName() + " {");
+    increaseIndent();
+    
+    // Generate field declarations from the AST fields
+    for (const auto& field : node.getFields()) {
+        emitIndent();
+        emitLine(mapPascalTypeToCpp(field.getType()) + " " + field.getName() + ";");
+    }
+    
+    decreaseIndent();
+    emitLine("};");
+    emitLine("");
+}
+
 void CppGenerator::visit(VariableDeclaration& node) {
     std::string cppType = mapPascalTypeToCpp(node.getType());
     emitIndent();
@@ -585,6 +601,8 @@ void CppGenerator::visit(Program& node) {
             constDecl->accept(*this);
         } else if (auto typeDecl = dynamic_cast<TypeDefinition*>(decl.get())) {
             typeDecl->accept(*this);
+        } else if (auto recordDecl = dynamic_cast<RecordTypeDefinition*>(decl.get())) {
+            recordDecl->accept(*this);
         } else if (auto varDecl = dynamic_cast<VariableDeclaration*>(decl.get())) {
             varDecl->accept(*this);
         }
