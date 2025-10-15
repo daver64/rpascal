@@ -110,6 +110,65 @@ void CppGenerator::visit(BinaryExpression& node) {
         return;
     }
     
+    // Handle set operations (union, intersection, difference)
+    TokenType op = node.getOperator().getType();
+    if (op == TokenType::PLUS || op == TokenType::MULTIPLY || op == TokenType::MINUS) {
+        // Check if we're dealing with sets by looking for set types
+        // This is a simplified check - in a full implementation we'd have proper type analysis
+        
+        // For now, assume if we see set literals or set variables, we're doing set operations
+        bool mightBeSetOperation = false;
+        
+        // Check if operands look like set operations (very basic heuristic)
+        // In a proper implementation, we'd have type information available
+        if (auto leftIdent = dynamic_cast<IdentifierExpression*>(node.getLeft())) {
+            // Look up symbol type - if it's a set type, this is a set operation
+            auto symbol = symbolTable_->lookup(leftIdent->getName());
+            if (symbol && symbol->getDataType() == DataType::CUSTOM) {
+                // Check if it's a set type by looking at type name
+                std::string typeName = symbol->getTypeName();
+                if (typeName.find("Set") != std::string::npos || typeName.find("set") != std::string::npos) {
+                    mightBeSetOperation = true;
+                }
+            }
+        }
+        
+        // Also check for set literals
+        if (dynamic_cast<SetLiteralExpression*>(node.getLeft()) || 
+            dynamic_cast<SetLiteralExpression*>(node.getRight())) {
+            mightBeSetOperation = true;
+        }
+        
+        if (mightBeSetOperation) {
+            // Generate set operations using std::set_* algorithms
+            if (op == TokenType::PLUS) {
+                // Set union: std::set_union
+                emit("([&](){ auto left_set = ");
+                node.getLeft()->accept(*this);
+                emit("; auto right_set = ");
+                node.getRight()->accept(*this);
+                emit("; std::remove_reference_t<decltype(left_set)> result; std::set_union(left_set.begin(), left_set.end(), right_set.begin(), right_set.end(), std::inserter(result, result.begin())); return result; })()");
+                return;
+            } else if (op == TokenType::MULTIPLY) {
+                // Set intersection: std::set_intersection  
+                emit("([&](){ auto left_set = ");
+                node.getLeft()->accept(*this);
+                emit("; auto right_set = ");
+                node.getRight()->accept(*this);
+                emit("; std::remove_reference_t<decltype(left_set)> result; std::set_intersection(left_set.begin(), left_set.end(), right_set.begin(), right_set.end(), std::inserter(result, result.begin())); return result; })()");
+                return;
+            } else if (op == TokenType::MINUS) {
+                // Set difference: std::set_difference
+                emit("([&](){ auto left_set = ");
+                node.getLeft()->accept(*this);
+                emit("; auto right_set = ");
+                node.getRight()->accept(*this);
+                emit("; std::remove_reference_t<decltype(left_set)> result; std::set_difference(left_set.begin(), left_set.end(), right_set.begin(), right_set.end(), std::inserter(result, result.begin())); return result; })()");
+                return;
+            }
+        }
+    }
+    
     // Handle string concatenation
     if (node.getOperator().getType() == TokenType::PLUS) {
         // Use std::string constructor to ensure at least one operand is a std::string
@@ -167,14 +226,28 @@ void CppGenerator::visit(ArrayIndexExpression& node) {
     
     // Look up the variable's type from symbol table
     std::string arrayTypeName;
+    DataType arrayDataType = DataType::UNKNOWN;
     if (!arrayVarName.empty() && symbolTable_) {
         auto symbol = symbolTable_->lookup(arrayVarName);
         if (symbol && symbol->getSymbolType() == SymbolType::VARIABLE) {
             arrayTypeName = symbol->getTypeName();
+            arrayDataType = symbol->getDataType();
         }
     }
     
     const std::vector<std::unique_ptr<Expression>>& indices = node.getIndices();
+    
+    // Special handling for string indexing
+    if (arrayDataType == DataType::STRING && indices.size() == 1) {
+        // Pascal strings use 1-based indexing, C++ uses 0-based
+        node.getArray()->accept(*this);
+        emit("[");
+        emit("(");
+        indices[0]->accept(*this);
+        emit(") - 1");
+        emit("]");
+        return;
+    }
     
     // Check if we have array type information
     auto arrayTypeIt = arrayTypes_.find(arrayTypeName);
@@ -588,6 +661,11 @@ void CppGenerator::visit(Program& node) {
     emitLine(generateRuntimeIncludes());
     emitLine("");
     
+    // Generate uses clause includes
+    if (node.getUsesClause()) {
+        node.getUsesClause()->accept(*this);
+    }
+    
     // Generate forward declarations
     std::string forwardDecls = generateForwardDeclarations(node.getDeclarations());
     if (!forwardDecls.empty()) {
@@ -678,6 +756,7 @@ std::string CppGenerator::generateHeaders() {
            "#include <string>\n"
            "#include <array>\n"
            "#include <set>\n"
+           "#include <algorithm>\n"
            "#include <cstdint>\n"
            "#include <cmath>\n"
            "#include <cstdlib>\n"
@@ -1637,6 +1716,26 @@ void CppGenerator::generateEnumDefinition(const std::string& typeName, const std
         // Malformed enum definition
         emitLine("// Enum definition: " + typeName + " = " + definition);
         emitLine("using " + typeName + " = int; // TODO: implement proper enum type");
+    }
+    emitLine("");
+}
+
+void CppGenerator::visit(UsesClause& node) {
+    // Generate include statements for units
+    emitLine("// Uses clause");
+    for (const std::string& unitName : node.getUnits()) {
+        if (unitName == "System") {
+            // System unit is automatically included via our built-in functions
+            emitLine("// System unit functions automatically available");
+        } else if (unitName == "Dos") {
+            emitLine("#include <filesystem>  // DOS unit support");
+            emitLine("#include <chrono>      // Date/time functions");
+        } else if (unitName == "Crt") {
+            emitLine("#include <conio.h>     // CRT unit support (Windows)");
+            emitLine("#include <windows.h>   // Console API");
+        } else {
+            emitLine("// TODO: Include unit " + unitName);
+        }
     }
     emitLine("");
 }

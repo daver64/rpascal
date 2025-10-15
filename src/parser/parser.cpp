@@ -19,6 +19,12 @@ std::unique_ptr<Program> Parser::parseProgram() {
         // Parse semicolon
         consume(TokenType::SEMICOLON, "Expected ';' after program name");
         
+        // Parse optional uses clause
+        std::unique_ptr<UsesClause> usesClause = nullptr;
+        if (match(TokenType::USES)) {
+            usesClause = parseUsesClause();
+        }
+        
         // Parse declarations
         std::vector<std::unique_ptr<Declaration>> declarations;
         while (!check(TokenType::BEGIN) && !isAtEnd()) {
@@ -110,7 +116,7 @@ std::unique_ptr<Program> Parser::parseProgram() {
         // Parse final period
         consume(TokenType::PERIOD, "Expected '.' after program");
         
-        return std::make_unique<Program>(programName, std::move(declarations), std::move(mainBlock));
+        return std::make_unique<Program>(programName, std::move(usesClause), std::move(declarations), std::move(mainBlock));
         
     } catch (const std::exception& e) {
         addError("Failed to parse program: " + std::string(e.what()));
@@ -995,6 +1001,27 @@ std::vector<RecordField> Parser::parseRecordFields() {
     }
     
     return fields;
+}
+
+std::unique_ptr<UsesClause> Parser::parseUsesClause() {
+    // 'uses' token already consumed
+    std::vector<std::string> units;
+    
+    do {
+        Token unitName = consume(TokenType::IDENTIFIER, "Expected unit name");
+        units.push_back(unitName.getValue());
+        
+        if (match(TokenType::COMMA)) {
+            // Continue parsing more units
+            continue;
+        } else {
+            break;
+        }
+    } while (!isAtEnd());
+    
+    consume(TokenType::SEMICOLON, "Expected ';' after uses clause");
+    
+    return std::make_unique<UsesClause>(std::move(units));
 }
 
 } // namespace rpascal

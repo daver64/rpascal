@@ -261,19 +261,49 @@ void SemanticAnalyzer::visit(FieldAccessExpression& node) {
 void SemanticAnalyzer::visit(ArrayIndexExpression& node) {
     // Visit both expressions to ensure they're valid
     node.getArray()->accept(*this);
-    node.getIndex()->accept(*this);
+    DataType arrayType = currentExpressionType_;
     
-    // TODO: Add proper array bounds checking and ensure index is integer type
+    node.getIndex()->accept(*this);
+    DataType indexType = currentExpressionType_;
+    
+    // Validate index type (should be integer)
+    if (indexType != DataType::INTEGER) {
+        addError("Array index must be an integer");
+        currentExpressionType_ = DataType::UNKNOWN;
+        return;
+    }
+    
+    // Determine result type based on array type
+    if (arrayType == DataType::STRING) {
+        // String indexing returns a character
+        currentExpressionType_ = DataType::CHAR;
+    } else if (arrayType == DataType::CUSTOM) {
+        // For arrays or other custom types, we'd need more type information
+        // For now, assume integer (this is a simplification)
+        currentExpressionType_ = DataType::INTEGER;
+    } else {
+        addError("Cannot index into non-array type: " + SymbolTable::dataTypeToString(arrayType));
+        currentExpressionType_ = DataType::UNKNOWN;
+    }
 }
 
 void SemanticAnalyzer::visit(SetLiteralExpression& node) {
     // Visit all elements to ensure they're valid
+    DataType elementType = DataType::UNKNOWN;
+    
     for (const auto& element : node.getElements()) {
         element->accept(*this);
+        
+        // Determine element type from first valid element
+        if (elementType == DataType::UNKNOWN && currentExpressionType_ != DataType::UNKNOWN) {
+            elementType = currentExpressionType_;
+        }
+        // TODO: Validate all elements have same type
     }
     
-    // TODO: Add proper set element type validation
-    currentExpressionType_ = DataType::UNKNOWN; // Sets don't have a basic data type
+    // Set the result type as a set type (for now, use CUSTOM)
+    // In a full implementation, we'd have specific set types
+    currentExpressionType_ = DataType::CUSTOM;
 }
 
 void SemanticAnalyzer::visit(ExpressionStatement& node) {
@@ -744,8 +774,12 @@ DataType SemanticAnalyzer::getResultType(DataType left, DataType right, TokenTyp
         return DataType::BOOLEAN;
     }
     
-    // Addition can be either arithmetic or string concatenation
+    // Addition can be arithmetic, string concatenation, or set union
     if (operator_ == TokenType::PLUS) {
+        // Set union
+        if (left == DataType::CUSTOM && right == DataType::CUSTOM) {
+            return DataType::CUSTOM;
+        }
         // String concatenation
         if (left == DataType::STRING && right == DataType::STRING) {
             return DataType::STRING;
@@ -757,9 +791,13 @@ DataType SemanticAnalyzer::getResultType(DataType left, DataType right, TokenTyp
         return DataType::INTEGER;
     }
     
-    // Other arithmetic operators
+    // Other arithmetic operators or set operations
     if (operator_ == TokenType::MINUS || operator_ == TokenType::MULTIPLY || 
         operator_ == TokenType::DIVIDE) {
+        // Set operations
+        if (left == DataType::CUSTOM && right == DataType::CUSTOM) {
+            return DataType::CUSTOM;
+        }
         // If either operand is real, result is real
         if (left == DataType::REAL || right == DataType::REAL) {
             return DataType::REAL;
@@ -795,12 +833,21 @@ bool SemanticAnalyzer::isValidBinaryOperation(DataType leftType, DataType rightT
     
     switch (operator_) {
         case TokenType::PLUS:
-            // Allow both numeric addition and string concatenation
+            // Allow numeric addition, string concatenation, and set union
             return ((leftType == DataType::INTEGER || leftType == DataType::REAL) &&
                     (rightType == DataType::INTEGER || rightType == DataType::REAL)) ||
-                   (leftType == DataType::STRING && rightType == DataType::STRING);
+                   (leftType == DataType::STRING && rightType == DataType::STRING) ||
+                   (leftType == DataType::CUSTOM && rightType == DataType::CUSTOM);
         case TokenType::MINUS:
+            // Allow numeric subtraction and set difference
+            return ((leftType == DataType::INTEGER || leftType == DataType::REAL) &&
+                    (rightType == DataType::INTEGER || rightType == DataType::REAL)) ||
+                   (leftType == DataType::CUSTOM && rightType == DataType::CUSTOM);
         case TokenType::MULTIPLY:
+            // Allow numeric multiplication and set intersection
+            return ((leftType == DataType::INTEGER || leftType == DataType::REAL) &&
+                    (rightType == DataType::INTEGER || rightType == DataType::REAL)) ||
+                   (leftType == DataType::CUSTOM && rightType == DataType::CUSTOM);
         case TokenType::DIVIDE:
             return (leftType == DataType::INTEGER || leftType == DataType::REAL) &&
                    (rightType == DataType::INTEGER || rightType == DataType::REAL);
@@ -819,6 +866,11 @@ bool SemanticAnalyzer::isValidBinaryOperation(DataType leftType, DataType rightT
         case TokenType::GREATER_EQUAL:
             return (leftType == DataType::INTEGER || leftType == DataType::REAL) &&
                    (rightType == DataType::INTEGER || rightType == DataType::REAL);
+                   
+        case TokenType::IN:
+            // Set membership: element in set
+            return (leftType == DataType::INTEGER || leftType == DataType::CHAR) &&
+                   (rightType == DataType::CUSTOM);
                    
         case TokenType::AND:
         case TokenType::OR:
@@ -1180,6 +1232,19 @@ std::string SemanticAnalyzer::getFieldTypeFromRecord(const std::string& fieldNam
     }
     
     return ""; // Field not found
+}
+
+void SemanticAnalyzer::visit(UsesClause& node) {
+    // For now, just validate that the units are known
+    // Later we can implement actual unit loading and dependency checking
+    for (const std::string& unitName : node.getUnits()) {
+        // Check if unit is a standard unit (System, Dos, Crt)
+        if (unitName != "System" && unitName != "Dos" && unitName != "Crt") {
+            // For now, just issue a warning for unknown units
+            // In a full implementation, we'd load the unit file
+            // addError("Unknown unit: " + unitName);
+        }
+    }
 }
 
 } // namespace rpascal

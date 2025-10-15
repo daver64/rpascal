@@ -47,6 +47,7 @@ public:
     void visit(ProcedureDeclaration& node) override;
     void visit(FunctionDeclaration& node) override;
     
+    void visit(UsesClause& node) override;
     void visit(Program& node) override;
     
 private:

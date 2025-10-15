@@ -37,6 +37,7 @@ private:
     void synchronize();
     
     // Parsing methods
+    std::unique_ptr<UsesClause> parseUsesClause();
     std::unique_ptr<Declaration> parseDeclaration();
     std::unique_ptr<ConstantDeclaration> parseConstantDeclaration();
     std::unique_ptr<VariableDeclaration> parseVariableDeclaration();

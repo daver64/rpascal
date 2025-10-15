@@ -552,22 +552,41 @@ private:
     bool isForward_;
 };
 
+// Uses clause for unit imports
+class UsesClause : public ASTNode {
+public:
+    UsesClause(std::vector<std::string> units)
+        : units_(std::move(units)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::vector<std::string>& getUnits() const { return units_; }
+    
+private:
+    std::vector<std::string> units_;
+};
+
 // Program node (root of AST)
 class Program : public ASTNode {
 public:
-    Program(const std::string& name, std::vector<std::unique_ptr<Declaration>> declarations,
+    Program(const std::string& name, std::unique_ptr<UsesClause> usesClause,
+            std::vector<std::unique_ptr<Declaration>> declarations,
             std::unique_ptr<CompoundStatement> mainBlock)
-        : name_(name), declarations_(std::move(declarations)), mainBlock_(std::move(mainBlock)) {}
+        : name_(name), usesClause_(std::move(usesClause)), 
+          declarations_(std::move(declarations)), mainBlock_(std::move(mainBlock)) {}
     
     void accept(ASTVisitor& visitor) override;
     std::string toString() const override;
     
     const std::string& getName() const { return name_; }
+    UsesClause* getUsesClause() const { return usesClause_.get(); }
     const std::vector<std::unique_ptr<Declaration>>& getDeclarations() const { return declarations_; }
     CompoundStatement* getMainBlock() const { return mainBlock_.get(); }
     
 private:
     std::string name_;
+    std::unique_ptr<UsesClause> usesClause_;
     std::vector<std::unique_ptr<Declaration>> declarations_;
     std::unique_ptr<CompoundStatement> mainBlock_;
 };
@@ -605,6 +624,7 @@ public:
     virtual void visit(ProcedureDeclaration& node) = 0;
     virtual void visit(FunctionDeclaration& node) = 0;
     
+    virtual void visit(UsesClause& node) = 0;
     virtual void visit(Program& node) = 0;
 };
 

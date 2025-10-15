@@ -325,6 +325,22 @@ std::string FunctionDeclaration::toString() const {
     return oss.str();
 }
 
+// UsesClause
+void UsesClause::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string UsesClause::toString() const {
+    std::ostringstream oss;
+    oss << "Uses(";
+    for (size_t i = 0; i < units_.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << units_[i];
+    }
+    oss << ")";
+    return oss.str();
+}
+
 // Program
 void Program::accept(ASTVisitor& visitor) {
     visitor.visit(*this);
@@ -332,7 +348,11 @@ void Program::accept(ASTVisitor& visitor) {
 
 std::string Program::toString() const {
     std::ostringstream oss;
-    oss << "Program(" << name_ << " [";
+    oss << "Program(" << name_;
+    if (usesClause_) {
+        oss << " " << usesClause_->toString();
+    }
+    oss << " [";
     for (size_t i = 0; i < declarations_.size(); ++i) {
         if (i > 0) oss << ", ";
         oss << declarations_[i]->toString();
