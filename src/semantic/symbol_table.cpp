@@ -288,6 +288,101 @@ void SymbolTable::initializeBuiltinSymbols() {
     eofFunc->addParameter("f", DataType::FILE_TYPE);
     eofFunc->setReturnType(DataType::BOOLEAN);
     define("eof", eofFunc);
+    
+    // Pointer allocation functions
+    auto newFunc = std::make_shared<Symbol>("new", SymbolType::PROCEDURE, DataType::VOID, 0);
+    newFunc->addParameter("ptr", DataType::POINTER); // var parameter in reality
+    define("new", newFunc);
+    
+    auto disposeFunc = std::make_shared<Symbol>("dispose", SymbolType::PROCEDURE, DataType::VOID, 0);
+    disposeFunc->addParameter("ptr", DataType::POINTER); // var parameter in reality
+    define("dispose", disposeFunc);
+    
+    // === SYSTEM UNIT FUNCTIONS ===
+    
+    // Mathematical functions
+    auto absFunc = std::make_shared<Symbol>("abs", SymbolType::FUNCTION, DataType::INTEGER, 0);
+    absFunc->addParameter("x", DataType::INTEGER);
+    absFunc->setReturnType(DataType::INTEGER);
+    define("abs", absFunc);
+    
+    auto sqrFunc = std::make_shared<Symbol>("sqr", SymbolType::FUNCTION, DataType::INTEGER, 0);
+    sqrFunc->addParameter("x", DataType::INTEGER);
+    sqrFunc->setReturnType(DataType::INTEGER);
+    define("sqr", sqrFunc);
+    
+    auto sqrtFunc = std::make_shared<Symbol>("sqrt", SymbolType::FUNCTION, DataType::REAL, 0);
+    sqrtFunc->addParameter("x", DataType::REAL);
+    sqrtFunc->setReturnType(DataType::REAL);
+    define("sqrt", sqrtFunc);
+    
+    auto sinFunc = std::make_shared<Symbol>("sin", SymbolType::FUNCTION, DataType::REAL, 0);
+    sinFunc->addParameter("x", DataType::REAL);
+    sinFunc->setReturnType(DataType::REAL);
+    define("sin", sinFunc);
+    
+    auto cosFunc = std::make_shared<Symbol>("cos", SymbolType::FUNCTION, DataType::REAL, 0);
+    cosFunc->addParameter("x", DataType::REAL);
+    cosFunc->setReturnType(DataType::REAL);
+    define("cos", cosFunc);
+    
+    auto arctanFunc = std::make_shared<Symbol>("arctan", SymbolType::FUNCTION, DataType::REAL, 0);
+    arctanFunc->addParameter("x", DataType::REAL);
+    arctanFunc->setReturnType(DataType::REAL);
+    define("arctan", arctanFunc);
+    
+    auto lnFunc = std::make_shared<Symbol>("ln", SymbolType::FUNCTION, DataType::REAL, 0);
+    lnFunc->addParameter("x", DataType::REAL);
+    lnFunc->setReturnType(DataType::REAL);
+    define("ln", lnFunc);
+    
+    auto expFunc = std::make_shared<Symbol>("exp", SymbolType::FUNCTION, DataType::REAL, 0);
+    expFunc->addParameter("x", DataType::REAL);
+    expFunc->setReturnType(DataType::REAL);
+    define("exp", expFunc);
+    
+    // Conversion functions
+    auto valFunc = std::make_shared<Symbol>("val", SymbolType::PROCEDURE, DataType::VOID, 0);
+    valFunc->addParameter("s", DataType::STRING);
+    valFunc->addParameter("result", DataType::INTEGER); // var parameter
+    valFunc->addParameter("code", DataType::INTEGER);   // var parameter
+    define("val", valFunc);
+    
+    auto strFunc = std::make_shared<Symbol>("str", SymbolType::PROCEDURE, DataType::VOID, 0);
+    strFunc->addParameter("x", DataType::INTEGER);
+    strFunc->addParameter("s", DataType::STRING); // var parameter
+    define("str", strFunc);
+    
+    // String functions
+    auto upcaseFunc = std::make_shared<Symbol>("upcase", SymbolType::FUNCTION, DataType::CHAR, 0);
+    upcaseFunc->addParameter("c", DataType::CHAR);
+    upcaseFunc->setReturnType(DataType::CHAR);
+    define("upcase", upcaseFunc);
+    
+    // I/O functions
+    auto paramCountFunc = std::make_shared<Symbol>("paramcount", SymbolType::FUNCTION, DataType::INTEGER, 0);
+    paramCountFunc->setReturnType(DataType::INTEGER);
+    define("paramcount", paramCountFunc);
+    
+    auto paramStrFunc = std::make_shared<Symbol>("paramstr", SymbolType::FUNCTION, DataType::STRING, 0);
+    paramStrFunc->addParameter("index", DataType::INTEGER);
+    paramStrFunc->setReturnType(DataType::STRING);
+    define("paramstr", paramStrFunc);
+    
+    // System functions
+    auto haltFunc = std::make_shared<Symbol>("halt", SymbolType::PROCEDURE, DataType::VOID, 0);
+    haltFunc->addParameter("exitcode", DataType::INTEGER); // optional parameter
+    define("halt", haltFunc);
+    
+    auto exitFunc = std::make_shared<Symbol>("exit", SymbolType::PROCEDURE, DataType::VOID, 0);
+    define("exit", exitFunc);
+    
+    auto randomFunc = std::make_shared<Symbol>("random", SymbolType::FUNCTION, DataType::REAL, 0);
+    randomFunc->setReturnType(DataType::REAL);
+    define("random", randomFunc);
+    
+    auto randomizeFunc = std::make_shared<Symbol>("randomize", SymbolType::PROCEDURE, DataType::VOID, 0);
+    define("randomize", randomizeFunc);
 }
 
 } // namespace rpascal

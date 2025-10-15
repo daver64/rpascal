@@ -49,6 +49,9 @@ void SemanticAnalyzer::visit(LiteralExpression& node) {
         case TokenType::FALSE:
             currentExpressionType_ = DataType::BOOLEAN;
             break;
+        case TokenType::NIL:
+            currentExpressionType_ = DataType::POINTER;
+            break;
         default:
             currentExpressionType_ = DataType::UNKNOWN;
             addError("Unknown literal type: " + token.getValue());
@@ -651,9 +654,22 @@ DataType SemanticAnalyzer::getResultType(DataType left, DataType right, TokenTyp
         return DataType::BOOLEAN;
     }
     
-    // Arithmetic operators
-    if (operator_ == TokenType::PLUS || operator_ == TokenType::MINUS ||
-        operator_ == TokenType::MULTIPLY || operator_ == TokenType::DIVIDE) {
+    // Addition can be either arithmetic or string concatenation
+    if (operator_ == TokenType::PLUS) {
+        // String concatenation
+        if (left == DataType::STRING && right == DataType::STRING) {
+            return DataType::STRING;
+        }
+        // Arithmetic addition
+        if (left == DataType::REAL || right == DataType::REAL) {
+            return DataType::REAL;
+        }
+        return DataType::INTEGER;
+    }
+    
+    // Other arithmetic operators
+    if (operator_ == TokenType::MINUS || operator_ == TokenType::MULTIPLY || 
+        operator_ == TokenType::DIVIDE) {
         // If either operand is real, result is real
         if (left == DataType::REAL || right == DataType::REAL) {
             return DataType::REAL;
@@ -689,6 +705,10 @@ bool SemanticAnalyzer::isValidBinaryOperation(DataType leftType, DataType rightT
     
     switch (operator_) {
         case TokenType::PLUS:
+            // Allow both numeric addition and string concatenation
+            return ((leftType == DataType::INTEGER || leftType == DataType::REAL) &&
+                    (rightType == DataType::INTEGER || rightType == DataType::REAL)) ||
+                   (leftType == DataType::STRING && rightType == DataType::STRING);
         case TokenType::MINUS:
         case TokenType::MULTIPLY:
         case TokenType::DIVIDE:
@@ -795,6 +815,7 @@ void SemanticAnalyzer::checkAssignment(Expression* target, Expression* value) {
     auto targetId = dynamic_cast<IdentifierExpression*>(target);
     auto targetField = dynamic_cast<FieldAccessExpression*>(target);
     auto targetArray = dynamic_cast<ArrayIndexExpression*>(target);
+    auto targetDeref = dynamic_cast<DereferenceExpression*>(target);
     
     std::shared_ptr<Symbol> targetSymbol = nullptr;
     
@@ -821,10 +842,11 @@ void SemanticAnalyzer::checkAssignment(Expression* target, Expression* value) {
             addError("Cannot assign to " + targetId->getName());
             return;
         }
-    } else if (targetField || targetArray) {
-        // Field access or array indexing - these are valid assignment targets
+    } else if (targetField || targetArray || targetDeref) {
+        // Field access, array indexing, or pointer dereference - these are valid assignment targets
         // For now, skip detailed type checking and allow the assignment
-        // TODO: Add more detailed validation for field/array types
+        // TODO: Add more detailed validation for field/array/pointer types
+        value->accept(*this);
         return; // Skip type compatibility check for now
     } else {
         addError("Invalid assignment target");

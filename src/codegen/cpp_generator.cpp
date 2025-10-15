@@ -41,6 +41,9 @@ void CppGenerator::visit(LiteralExpression& node) {
         case TokenType::FALSE:
             emit("false");
             break;
+        case TokenType::NIL:
+            emit("nullptr");
+            break;
         default:
             emit(token.getValue());
     }
@@ -59,8 +62,33 @@ void CppGenerator::visit(IdentifierExpression& node) {
     if (symbolTable_) {
         auto symbol = symbolTable_->lookup(name);
         if (symbol && symbol->getSymbolType() == SymbolType::PROCEDURE) {
+            // Check if this is a builtin procedure and handle it specially
+            if (isBuiltinFunction(name)) {
+                if (name == "randomize") {
+                    emit("std::srand(static_cast<unsigned int>(std::time(nullptr)))");
+                    return;
+                } else if (name == "exit") {
+                    emit("return");
+                    return;
+                }
+            }
             // For procedures called without parameters, add parentheses for C++
             emit(name + "()");
+            return;
+        } else if (symbol && symbol->getSymbolType() == SymbolType::FUNCTION) {
+            // Check if this is a builtin function without parameters
+            if (isBuiltinFunction(name)) {
+                if (name == "paramcount") {
+                    emit("(pascal_argc - 1)");
+                    return;
+                } else if (name == "random") {
+                    emit("(static_cast<double>(std::rand()) / RAND_MAX)");
+                    return;
+                }
+            }
+            // For user-defined functions, we might need to add () for C++
+            // For now, just emit the name for functions
+            emit(name);
             return;
         }
     }
@@ -79,6 +107,17 @@ void CppGenerator::visit(BinaryExpression& node) {
         emit("; return temp_set.find(");
         node.getLeft()->accept(*this);  // element
         emit(") != temp_set.end(); })()");
+        return;
+    }
+    
+    // Handle string concatenation
+    if (node.getOperator().getType() == TokenType::PLUS) {
+        // Use std::string constructor to ensure at least one operand is a std::string
+        emit("(std::string(");
+        node.getLeft()->accept(*this);
+        emit(") + ");
+        node.getRight()->accept(*this);
+        emit(")");
         return;
     }
     
@@ -564,9 +603,22 @@ void CppGenerator::visit(Program& node) {
         }
     }
     
+    // Global variables for Pascal command line arguments
+    emitLine("// Global variables for Pascal system functions");
+    emitLine("static int pascal_argc = 0;");
+    emitLine("static char** pascal_argv = nullptr;");
+    emitLine("");
+    
     // Generate main function
-    emitLine("int main() {");
+    emitLine("int main(int argc, char* argv[]) {");
     increaseIndent();
+    
+    // Initialize global command line arguments
+    emitIndent();
+    emitLine("pascal_argc = argc;");
+    emitIndent();
+    emitLine("pascal_argv = argv;");
+    emitLine("");
     
     node.getMainBlock()->accept(*this);
     
@@ -608,7 +660,11 @@ std::string CppGenerator::generateHeaders() {
            "#include <string>\n"
            "#include <array>\n"
            "#include <set>\n"
-           "#include <cstdint>";
+           "#include <cstdint>\n"
+           "#include <cmath>\n"
+           "#include <cstdlib>\n"
+           "#include <ctime>\n"
+           "#include <cctype>";
 }
 
 std::string CppGenerator::generateRuntimeIncludes() {
@@ -756,6 +812,26 @@ void CppGenerator::generateFunctionCall(CallExpression& node) {
 
 void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& functionName) {
     if (functionName == "writeln") {
+        // Check if first argument is a file variable
+        if (!node.getArguments().empty()) {
+            // Check if the first argument looks like a file (simple heuristic)
+            auto firstArg = dynamic_cast<IdentifierExpression*>(node.getArguments()[0].get());
+            if (firstArg && (firstArg->getName() == "f" || 
+                           firstArg->getName().find("file") != std::string::npos ||
+                           firstArg->getName().find("File") != std::string::npos)) {
+                // File output: writeln(f, args...) -> f.getStream() << args... << std::endl
+                node.getArguments()[0]->accept(*this);
+                emit(".getStream()");
+                for (size_t i = 1; i < node.getArguments().size(); ++i) {
+                    emit(" << ");
+                    node.getArguments()[i]->accept(*this);
+                }
+                emit(" << std::endl");
+                return;
+            }
+        }
+        
+        // Console output: writeln(args...) -> std::cout << args... << std::endl
         emit("std::cout");
         for (const auto& arg : node.getArguments()) {
             emit(" << ");
@@ -763,6 +839,49 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
         }
         emit(" << std::endl");
     } else if (functionName == "readln") {
+        // Check if first argument is a file variable
+        if (!node.getArguments().empty()) {
+            auto firstArg = dynamic_cast<IdentifierExpression*>(node.getArguments()[0].get());
+            if (firstArg && (firstArg->getName() == "f" || 
+                           firstArg->getName().find("file") != std::string::npos ||
+                           firstArg->getName().find("File") != std::string::npos)) {
+                // File input: readln(f, var) -> f.getStream() >> var
+                node.getArguments()[0]->accept(*this);
+                emit(".getStream()");
+                for (size_t i = 1; i < node.getArguments().size(); ++i) {
+                    emit(" >> ");
+                    node.getArguments()[i]->accept(*this);
+                }
+                return;
+            }
+        }
+        
+        // Console input: readln(var) -> std::cin >> var
+        emit("std::cin");
+        for (const auto& arg : node.getArguments()) {
+            emit(" >> ");
+            arg->accept(*this);
+        }
+    } else if (functionName == "read") {
+        // read(f, var) -> f.getStream() >> var
+        if (node.getArguments().size() >= 2) {
+            // Check if first argument is a file variable
+            auto firstArg = dynamic_cast<IdentifierExpression*>(node.getArguments()[0].get());
+            if (firstArg && (firstArg->getName() == "f" || 
+                           firstArg->getName().find("file") != std::string::npos ||
+                           firstArg->getName().find("File") != std::string::npos)) {
+                // File input: read(f, var) -> f.getStream() >> var
+                node.getArguments()[0]->accept(*this);
+                emit(".getStream()");
+                for (size_t i = 1; i < node.getArguments().size(); ++i) {
+                    emit(" >> ");
+                    node.getArguments()[i]->accept(*this);
+                }
+                return;
+            }
+        }
+        
+        // Console input: read(var) -> std::cin >> var
         emit("std::cin");
         for (const auto& arg : node.getArguments()) {
             emit(" >> ");
@@ -816,42 +935,37 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
         }
         emit(")");
     } else if (functionName == "concat") {
-        // concat(str1, str2, ...) -> str1 + str2 + ...
+        // concat(str1, str2, ...) -> std::string(str1) + str2 + ...
         emit("(");
         for (size_t i = 0; i < node.getArguments().size(); ++i) {
             if (i > 0) emit(" + ");
+            if (i == 0) emit("std::string("); // Wrap first argument
             node.getArguments()[i]->accept(*this);
+            if (i == 0) emit(")"); // Close wrapper for first argument
         }
         emit(")");
     } else if (functionName == "insert") {
-        // insert(substr, str, pos) - For now, we'll treat this as an expression
-        // Note: Pascal's insert modifies the string in place, but this is complex to handle
-        // For testing purposes, we'll generate a placeholder
-        emit("/* Pascal insert() not fully supported yet */ (");
+        // insert(substr, str, pos) - Pascal modifies string in place
+        // Generate: str.insert(pos-1, substr)
         if (node.getArguments().size() >= 3) {
             node.getArguments()[1]->accept(*this); // str
             emit(".insert(");
             node.getArguments()[2]->accept(*this); // pos
             emit(" - 1, ");
             node.getArguments()[0]->accept(*this); // substr
-            emit("), ");
-            node.getArguments()[1]->accept(*this); // return the modified string
+            emit(")");
         }
-        emit(")");
     } else if (functionName == "delete") {
-        // delete(str, pos, length) - For now, we'll treat this as an expression
-        // Note: Pascal's delete modifies the string in place
-        emit("/* Pascal delete() not fully supported yet */ (");
+        // delete(str, pos, length) - Pascal modifies string in place
+        // Generate: str.erase(pos-1, length)
         if (node.getArguments().size() >= 3) {
             node.getArguments()[0]->accept(*this); // str
             emit(".erase(");
             node.getArguments()[1]->accept(*this); // pos
             emit(" - 1, ");
             node.getArguments()[2]->accept(*this); // length
-            emit("), ");
-            node.getArguments()[0]->accept(*this); // return the modified string
-        }
-        emit(")");
+            emit(")");
+        };
     } else if (functionName == "assign") {
         // assign(f, filename) -> f.assign(filename)
         if (node.getArguments().size() >= 2) {
@@ -884,6 +998,145 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
             node.getArguments()[0]->accept(*this); // file variable
             emit(".eof()");
         }
+    } else if (functionName == "new") {
+        // new(ptr) -> ptr = new <type>
+        // For simplicity, we'll generate a basic new for integer pointers
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this); // pointer variable
+            emit(" = new int32_t()");
+        }
+    } else if (functionName == "dispose") {
+        // dispose(ptr) -> delete ptr; ptr = nullptr
+        if (!node.getArguments().empty()) {
+            emit("delete ");
+            node.getArguments()[0]->accept(*this); // pointer variable
+            emit("; ");
+            node.getArguments()[0]->accept(*this); // pointer variable
+            emit(" = nullptr");
+        }
+    
+    // === SYSTEM UNIT FUNCTIONS ===
+    
+    // Mathematical functions
+    } else if (functionName == "abs") {
+        // abs(x) -> std::abs(x)
+        emit("std::abs(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (functionName == "sqr") {
+        // sqr(x) -> (x * x)
+        emit("(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+            emit(" * ");
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (functionName == "sqrt") {
+        // sqrt(x) -> std::sqrt(x)
+        emit("std::sqrt(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (functionName == "sin") {
+        // sin(x) -> std::sin(x)
+        emit("std::sin(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (functionName == "cos") {
+        // cos(x) -> std::cos(x)
+        emit("std::cos(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (functionName == "arctan") {
+        // arctan(x) -> std::atan(x)
+        emit("std::atan(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (functionName == "ln") {
+        // ln(x) -> std::log(x)
+        emit("std::log(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (functionName == "exp") {
+        // exp(x) -> std::exp(x)
+        emit("std::exp(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    
+    // Conversion functions
+    } else if (functionName == "val") {
+        // val(s, result, code) -> Custom implementation needed
+        // For now, generate a simple conversion
+        if (node.getArguments().size() >= 2) {
+            emit("/* val not fully implemented */ ");
+            node.getArguments()[1]->accept(*this); // result variable
+            emit(" = std::stoi(");
+            node.getArguments()[0]->accept(*this); // string
+            emit(")");
+        }
+    } else if (functionName == "str") {
+        // str(x, s) -> s = std::to_string(x)
+        if (node.getArguments().size() >= 2) {
+            node.getArguments()[1]->accept(*this); // string variable
+            emit(" = std::to_string(");
+            node.getArguments()[0]->accept(*this); // value
+            emit(")");
+        }
+    
+    // String functions
+    } else if (functionName == "upcase") {
+        // upcase(c) -> static_cast<char>(std::toupper(c))
+        emit("static_cast<char>(std::toupper(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit("))");
+    
+    // I/O functions
+    } else if (functionName == "paramcount") {
+        // paramcount -> (argc - 1) // assuming global argc available
+        emit("(pascal_argc - 1)");
+    } else if (functionName == "paramstr") {
+        // paramstr(i) -> pascal_argv[i] // assuming global argv available
+        emit("std::string(pascal_argv[");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit("])");
+    
+    // System functions
+    } else if (functionName == "halt") {
+        // halt(code) -> std::exit(code)
+        emit("std::exit(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        } else {
+            emit("0");
+        }
+        emit(")");
+    } else if (functionName == "exit") {
+        // exit -> return (from current function)
+        emit("return");
+    } else if (functionName == "random") {
+        // random -> (static_cast<double>(std::rand()) / RAND_MAX)
+        emit("(static_cast<double>(std::rand()) / RAND_MAX)");
+    } else if (functionName == "randomize") {
+        // randomize -> std::srand(std::time(nullptr))
+        emit("std::srand(static_cast<unsigned int>(std::time(nullptr)))");
     } else {
         // Default function call
         emit(functionName + "(");
@@ -939,11 +1192,22 @@ std::string CppGenerator::generateParameterList(const std::vector<std::unique_pt
 }
 
 bool CppGenerator::isBuiltinFunction(const std::string& name) {
-    return name == "writeln" || name == "readln" || name == "length" || 
+    return name == "writeln" || name == "readln" || name == "read" || name == "length" || 
            name == "chr" || name == "ord" || name == "pos" || name == "copy" ||
            name == "concat" || name == "insert" || name == "delete" ||
            name == "assign" || name == "reset" || name == "rewrite" ||
-           name == "close" || name == "eof";
+           name == "close" || name == "eof" || name == "new" || name == "dispose" ||
+           // System unit mathematical functions
+           name == "abs" || name == "sqr" || name == "sqrt" || name == "sin" ||
+           name == "cos" || name == "arctan" || name == "ln" || name == "exp" ||
+           // System unit conversion functions  
+           name == "val" || name == "str" ||
+           // System unit string functions
+           name == "upcase" ||
+           // System unit I/O functions
+           name == "paramcount" || name == "paramstr" ||
+           // System unit system functions
+           name == "halt" || name == "exit" || name == "random" || name == "randomize";
 }
 
 std::string CppGenerator::escapeCppString(const std::string& str) {

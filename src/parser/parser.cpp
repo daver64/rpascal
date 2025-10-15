@@ -614,7 +614,7 @@ std::unique_ptr<Expression> Parser::parseUnaryExpression() {
 }
 
 std::unique_ptr<Expression> Parser::parsePrimaryExpression() {
-    if (check(TokenType::TRUE) || check(TokenType::FALSE) ||
+    if (check(TokenType::TRUE) || check(TokenType::FALSE) || check(TokenType::NIL) ||
         check(TokenType::INTEGER_LITERAL) || check(TokenType::REAL_LITERAL) ||
         check(TokenType::STRING_LITERAL) || check(TokenType::CHAR_LITERAL)) {
         Token token = currentToken_;
