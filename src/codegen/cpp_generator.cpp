@@ -104,9 +104,9 @@ void CppGenerator::visit(BinaryExpression& node) {
         // Use lambda to avoid duplicate set creation: [&](){ auto s = set; return s.find(element) != s.end(); }()
         emit("([&](){ auto temp_set = ");
         node.getRight()->accept(*this); // set
-        emit("; return temp_set.find(");
-        node.getLeft()->accept(*this);  // element
-        emit(") != temp_set.end(); })()");
+        emit("; return temp_set.find(static_cast<int>(");
+        node.getLeft()->accept(*this);  // element - cast to int for enum compatibility
+        emit(")) != temp_set.end(); })()");
         return;
     }
     
@@ -140,30 +140,30 @@ void CppGenerator::visit(BinaryExpression& node) {
         }
         
         if (mightBeSetOperation) {
-            // Generate set operations using std::set_* algorithms
+            // Generate set operations using simpler C++ approach
             if (op == TokenType::PLUS) {
-                // Set union: std::set_union
-                emit("([&](){ auto left_set = ");
+                // Set union: create result, insert from both sets
+                emit("([&](){ auto result = ");
                 node.getLeft()->accept(*this);
                 emit("; auto right_set = ");
                 node.getRight()->accept(*this);
-                emit("; std::remove_reference_t<decltype(left_set)> result; std::set_union(left_set.begin(), left_set.end(), right_set.begin(), right_set.end(), std::inserter(result, result.begin())); return result; })()");
+                emit("; result.insert(right_set.begin(), right_set.end()); return result; })()");
                 return;
             } else if (op == TokenType::MULTIPLY) {
-                // Set intersection: std::set_intersection  
+                // Set intersection: iterate and find common elements
                 emit("([&](){ auto left_set = ");
                 node.getLeft()->accept(*this);
                 emit("; auto right_set = ");
                 node.getRight()->accept(*this);
-                emit("; std::remove_reference_t<decltype(left_set)> result; std::set_intersection(left_set.begin(), left_set.end(), right_set.begin(), right_set.end(), std::inserter(result, result.begin())); return result; })()");
+                emit("; std::remove_reference_t<decltype(left_set)> result; for (const auto& elem : left_set) { if (right_set.count(elem)) result.insert(elem); } return result; })()");
                 return;
             } else if (op == TokenType::MINUS) {
-                // Set difference: std::set_difference
-                emit("([&](){ auto left_set = ");
+                // Set difference: remove elements that are in right set
+                emit("([&](){ auto result = ");
                 node.getLeft()->accept(*this);
                 emit("; auto right_set = ");
                 node.getRight()->accept(*this);
-                emit("; std::remove_reference_t<decltype(left_set)> result; std::set_difference(left_set.begin(), left_set.end(), right_set.begin(), right_set.end(), std::inserter(result, result.begin())); return result; })()");
+                emit("; for (const auto& elem : right_set) { result.erase(elem); } return result; })()");
                 return;
             }
         }
@@ -345,26 +345,15 @@ void CppGenerator::visit(ArrayIndexExpression& node) {
 }
 
 void CppGenerator::visit(SetLiteralExpression& node) {
-    // Generate C++ set literal with proper type inference
-    // For now, determine type from first element - could be improved with full type analysis
-    std::string elementType = "int"; // default to int
-    
+    // Generate C++ set literal as std::set<int> and cast all elements to int
+    // This handles both integer literals and enum values uniformly
+    emit("std::set<int>{");
     const auto& elements = node.getElements();
-    if (!elements.empty()) {
-        // Check if first element is a character literal
-        if (auto* literal = dynamic_cast<LiteralExpression*>(elements[0].get())) {
-            if (literal->getToken().getType() == TokenType::CHAR_LITERAL) {
-                elementType = "char";
-            } else if (literal->getToken().getType() == TokenType::INTEGER_LITERAL) {
-                elementType = "int";
-            }
-        }
-    }
-    
-    emit("std::set<" + elementType + ">{");
     for (size_t i = 0; i < elements.size(); ++i) {
         if (i > 0) emit(", ");
+        emit("static_cast<int>(");
         elements[i]->accept(*this);
+        emit(")");
     }
     emit("}");
 }
@@ -910,6 +899,17 @@ std::string CppGenerator::mapPascalTypeToCpp(const std::string& pascalType) {
         return mapPascalTypeToCpp(pointeeType) + "*";
     }
     
+    // Handle subrange types: 0..9 -> int, 'A'..'Z' -> char
+    if (lowerType.find("..") != std::string::npos) {
+        // Check if it's a character range 'A'..'Z'
+        if (lowerType.find("'") != std::string::npos) {
+            return "char";
+        } else {
+            // Numeric range like 0..9
+            return "int";
+        }
+    }
+    
     if (lowerType == "integer") return "int32_t";
     if (lowerType == "real") return "double";
     if (lowerType == "boolean") return "bool";
@@ -961,7 +961,12 @@ void CppGenerator::generateFunctionCall(CallExpression& node) {
 }
 
 void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& functionName) {
-    if (functionName == "writeln") {
+    // Convert to lowercase for comparison
+    std::string lowerName = functionName;
+    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), 
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    
+    if (lowerName == "writeln") {
         // Check if first argument is a file variable
         if (!node.getArguments().empty()) {
             // Check if the first argument looks like a file (simple heuristic)
@@ -1048,7 +1053,7 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
             node.getArguments()[0]->accept(*this);
         }
         emit(")");
-    } else if (functionName == "ord") {
+    } else if (lowerName == "ord") {
         emit("static_cast<int>(");
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this);
@@ -1342,22 +1347,27 @@ std::string CppGenerator::generateParameterList(const std::vector<std::unique_pt
 }
 
 bool CppGenerator::isBuiltinFunction(const std::string& name) {
-    return name == "writeln" || name == "readln" || name == "read" || name == "length" || 
-           name == "chr" || name == "ord" || name == "pos" || name == "copy" ||
-           name == "concat" || name == "insert" || name == "delete" ||
-           name == "assign" || name == "reset" || name == "rewrite" ||
-           name == "close" || name == "eof" || name == "new" || name == "dispose" ||
+    // Convert to lowercase for comparison
+    std::string lowerName = name;
+    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), 
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    
+    return lowerName == "writeln" || lowerName == "readln" || lowerName == "read" || lowerName == "length" || 
+           lowerName == "chr" || lowerName == "ord" || lowerName == "pos" || lowerName == "copy" ||
+           lowerName == "concat" || lowerName == "insert" || lowerName == "delete" ||
+           lowerName == "assign" || lowerName == "reset" || lowerName == "rewrite" ||
+           lowerName == "close" || lowerName == "eof" || lowerName == "new" || lowerName == "dispose" ||
            // System unit mathematical functions
-           name == "abs" || name == "sqr" || name == "sqrt" || name == "sin" ||
-           name == "cos" || name == "arctan" || name == "ln" || name == "exp" ||
+           lowerName == "abs" || lowerName == "sqr" || lowerName == "sqrt" || lowerName == "sin" ||
+           lowerName == "cos" || lowerName == "arctan" || lowerName == "ln" || lowerName == "exp" ||
            // System unit conversion functions  
-           name == "val" || name == "str" ||
+           lowerName == "val" || lowerName == "str" ||
            // System unit string functions
-           name == "upcase" ||
+           lowerName == "upcase" ||
            // System unit I/O functions
-           name == "paramcount" || name == "paramstr" ||
+           lowerName == "paramcount" || lowerName == "paramstr" ||
            // System unit system functions
-           name == "halt" || name == "exit" || name == "random" || name == "randomize";
+           lowerName == "halt" || lowerName == "exit" || lowerName == "random" || lowerName == "randomize";
 }
 
 std::string CppGenerator::escapeCppString(const std::string& str) {
@@ -1692,8 +1702,13 @@ void CppGenerator::generateSetDefinition(const std::string& typeName, const std:
         elementType.erase(0, elementType.find_first_not_of(" \t\n\r"));
         elementType.erase(elementType.find_last_not_of(" \t\n\r") + 1);
         
-        std::string cppElementType = mapPascalTypeToCpp(elementType);
-        emitLine("using " + typeName + " = std::set<" + cppElementType + ">;");
+        // Check if the element type is an enum - if so, use int for internal representation
+        if (enumTypes_.find(elementType) != enumTypes_.end()) {
+            emitLine("using " + typeName + " = std::set<int>; // Set of enum " + elementType);
+        } else {
+            std::string cppElementType = mapPascalTypeToCpp(elementType);
+            emitLine("using " + typeName + " = std::set<" + cppElementType + ">;");
+        }
         emitLine("");
     } else {
         // Malformed set definition

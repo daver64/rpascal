@@ -68,6 +68,7 @@ private:
     std::shared_ptr<SymbolTable> symbolTable_;
     std::vector<std::string> errors_;
     DataType currentExpressionType_;
+    std::string currentExpressionTypeName_; // For custom types (enums, records, etc.)
     DataType currentPointeeType_;
     std::string currentFunctionName_; // For return value checking
     
@@ -85,7 +86,7 @@ private:
     // Helper methods
     void addError(const std::string& message);
     DataType getExpressionType(Expression* expr);
-    bool areTypesCompatible(DataType left, DataType right);
+    bool areTypesCompatible(DataType left, DataType right, const std::string& leftTypeName = "", const std::string& rightTypeName = "");
     bool areArgumentTypesCompatible(DataType expectedType, DataType actualType, Expression* actualExpr);
     bool isBoundedStringType(DataType type);
     DataType getResultType(DataType left, DataType right, TokenType operator_);
@@ -95,6 +96,10 @@ private:
     void checkAssignment(Expression* target, Expression* value);
     bool isFieldInRecordDefinition(const std::string& fieldName, const std::string& recordDef);
     std::string getFieldTypeFromRecord(const std::string& fieldName, const std::string& recordDef);
+    
+    // Built-in function handling
+    bool isBuiltinFunction(const std::string& functionName);
+    void handleBuiltinFunction(const std::string& functionName, CallExpression& node);
 };
 
 } // namespace rpascal

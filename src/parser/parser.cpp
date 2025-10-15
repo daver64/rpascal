@@ -878,6 +878,34 @@ std::string Parser::parseTypeName() {
         return "^" + pointeeType;
     }
     
+    // Handle subrange types in type name context (for set of 0..9)
+    if (check(TokenType::INTEGER_LITERAL) || check(TokenType::CHAR_LITERAL)) {
+        Token startToken = currentToken_;
+        advance();
+        
+        // Check if this is a subrange type
+        if (check(TokenType::RANGE)) {
+            advance(); // consume '..'
+            TokenType expectedEndType = startToken.getType();
+            Token endToken = consume(expectedEndType, 
+                expectedEndType == TokenType::INTEGER_LITERAL ? 
+                "Expected integer end value in range type" : 
+                "Expected character end value in range type");
+                
+            // For character literals, preserve the quotes in the definition
+            if (startToken.getType() == TokenType::CHAR_LITERAL) {
+                return "'" + startToken.getValue() + "'.." + "'" + endToken.getValue() + "'";
+            } else {
+                return startToken.getValue() + ".." + endToken.getValue();
+            }
+        } else {
+            // Just a literal, not a subrange - backtrack
+            // This shouldn't normally happen in type context, but handle gracefully
+            addError("Expected type name, not literal value");
+            throw std::runtime_error("Expected type name, not literal value");
+        }
+    }
+    
     // Accept both IDENTIFIER and type keywords as type names
     if (check(TokenType::IDENTIFIER) || 
         check(TokenType::INTEGER) || check(TokenType::REAL) || 

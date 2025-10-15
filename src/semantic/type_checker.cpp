@@ -56,6 +56,7 @@ void SemanticAnalyzer::visit(LiteralExpression& node) {
             currentExpressionType_ = DataType::UNKNOWN;
             addError("Unknown literal type: " + token.getValue());
     }
+    currentExpressionTypeName_ = ""; // Literals don't have custom type names
 }
 
 void SemanticAnalyzer::visit(IdentifierExpression& node) {
@@ -96,6 +97,7 @@ void SemanticAnalyzer::visit(IdentifierExpression& node) {
         if (!foundInWithContext) {
             addError("Undefined identifier: " + node.getName());
             currentExpressionType_ = DataType::UNKNOWN;
+            currentExpressionTypeName_ = "";
         }
         return;
     }
@@ -103,8 +105,15 @@ void SemanticAnalyzer::visit(IdentifierExpression& node) {
     if (symbol->getSymbolType() == SymbolType::FUNCTION) {
         // Function name used as expression (for return value assignment)
         currentExpressionType_ = symbol->getReturnType();
+        currentExpressionTypeName_ = "";
     } else {
         currentExpressionType_ = symbol->getDataType();
+        // For custom types, also store the type name
+        if (symbol->getDataType() == DataType::CUSTOM) {
+            currentExpressionTypeName_ = symbol->getTypeName();
+        } else {
+            currentExpressionTypeName_ = "";
+        }
     }
 }
 
@@ -112,22 +121,45 @@ void SemanticAnalyzer::visit(BinaryExpression& node) {
     // Analyze operands
     node.getLeft()->accept(*this);
     DataType leftType = currentExpressionType_;
+    std::string leftTypeName = currentExpressionTypeName_;
     
     node.getRight()->accept(*this);
     DataType rightType = currentExpressionType_;
+    std::string rightTypeName = currentExpressionTypeName_;
     
     TokenType operator_ = node.getOperator().getType();
     
+    // Check type compatibility for comparison operators
+    if (operator_ == TokenType::EQUAL || operator_ == TokenType::NOT_EQUAL ||
+        operator_ == TokenType::LESS_THAN || operator_ == TokenType::LESS_EQUAL ||
+        operator_ == TokenType::GREATER_THAN || operator_ == TokenType::GREATER_EQUAL) {
+        if (!areTypesCompatible(leftType, rightType, leftTypeName, rightTypeName)) {
+            addError("Invalid binary operation: " + 
+                    SymbolTable::dataTypeToString(leftType) + " " + 
+                    node.getOperator().getValue() + " " + 
+                    SymbolTable::dataTypeToString(rightType));
+            currentExpressionType_ = DataType::UNKNOWN;
+            currentExpressionTypeName_ = "";
+            return;
+        }
+        currentExpressionType_ = DataType::BOOLEAN;
+        currentExpressionTypeName_ = "";
+        return;
+    }
+    
+    // For other operators, use the existing validation
     if (!isValidBinaryOperation(leftType, rightType, operator_)) {
         addError("Invalid binary operation: " + 
                 SymbolTable::dataTypeToString(leftType) + " " + 
                 node.getOperator().getValue() + " " + 
                 SymbolTable::dataTypeToString(rightType));
         currentExpressionType_ = DataType::UNKNOWN;
+        currentExpressionTypeName_ = "";
         return;
     }
     
     currentExpressionType_ = getResultType(leftType, rightType, operator_);
+    currentExpressionTypeName_ = ""; // Result types are usually built-in types
 }
 
 void SemanticAnalyzer::visit(UnaryExpression& node) {
@@ -500,8 +532,8 @@ void SemanticAnalyzer::visit(TypeDefinition& node) {
             if (start != std::string::npos && end != std::string::npos) {
                 enumValue = enumValue.substr(start, end - start + 1);
                 
-                // Register enum value as a constant
-                auto enumSymbol = std::make_shared<Symbol>(enumValue, SymbolType::CONSTANT, DataType::INTEGER);
+                // Register enum value as a constant with the enum type
+                auto enumSymbol = std::make_shared<Symbol>(enumValue, SymbolType::CONSTANT, DataType::CUSTOM);
                 enumSymbol->setTypeName(node.getName()); // Link back to enum type
                 symbolTable_->define(enumValue, enumSymbol);
                 enumOrdinal++;
@@ -753,8 +785,14 @@ DataType SemanticAnalyzer::getExpressionType(Expression* expr) {
     return currentExpressionType_;
 }
 
-bool SemanticAnalyzer::areTypesCompatible(DataType left, DataType right) {
-    if (left == right) return true;
+bool SemanticAnalyzer::areTypesCompatible(DataType left, DataType right, const std::string& leftTypeName, const std::string& rightTypeName) {
+    if (left == right) {
+        // For custom types, also check type names
+        if (left == DataType::CUSTOM) {
+            return leftTypeName == rightTypeName;
+        }
+        return true;
+    }
     
     // Integer and real are compatible
     if ((left == DataType::INTEGER && right == DataType::REAL) ||
@@ -874,7 +912,7 @@ bool SemanticAnalyzer::isValidBinaryOperation(DataType leftType, DataType rightT
                    
         case TokenType::IN:
             // Set membership: element in set
-            return (leftType == DataType::INTEGER || leftType == DataType::CHAR) &&
+            return (leftType == DataType::INTEGER || leftType == DataType::CHAR || leftType == DataType::CUSTOM) &&
                    (rightType == DataType::CUSTOM);
                    
         case TokenType::AND:
@@ -897,6 +935,13 @@ void SemanticAnalyzer::checkFunctionCall(CallExpression& node) {
     }
     
     std::string functionName = calleeExpr->getName();
+    
+    // Check for built-in functions first
+    if (isBuiltinFunction(functionName)) {
+        handleBuiltinFunction(functionName, node);
+        return;
+    }
+    
     auto symbol = symbolTable_->lookup(functionName);
     
     if (!symbol) {
@@ -1302,6 +1347,71 @@ void SemanticAnalyzer::visit(Unit& node) {
     if (node.getInitializationBlock()) {
         const_cast<CompoundStatement*>(node.getInitializationBlock())->accept(*this);
     }
+}
+
+bool SemanticAnalyzer::isBuiltinFunction(const std::string& functionName) {
+    // Convert to lowercase for comparison
+    std::string lowerName = functionName;
+    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), 
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    
+    return lowerName == "writeln" || lowerName == "readln" || lowerName == "read" ||
+           lowerName == "length" || lowerName == "chr" || lowerName == "ord" || 
+           lowerName == "pos" || lowerName == "copy" || lowerName == "concat" ||
+           lowerName == "insert" || lowerName == "delete" || lowerName == "assign" ||
+           lowerName == "reset" || lowerName == "rewrite" || lowerName == "close" ||
+           lowerName == "eof" || lowerName == "new" || lowerName == "dispose" ||
+           // System unit mathematical functions
+           lowerName == "abs" || lowerName == "sqr" || lowerName == "sqrt" ||
+           lowerName == "sin" || lowerName == "cos" || lowerName == "arctan" ||
+           lowerName == "ln" || lowerName == "exp" ||
+           // System unit conversion functions  
+           lowerName == "val" || lowerName == "str" ||
+           // System unit string functions
+           lowerName == "upcase" ||
+           // System unit I/O functions
+           lowerName == "paramcount" || lowerName == "paramstr" ||
+           // System unit system functions
+           lowerName == "halt" || lowerName == "exit" || lowerName == "random" || 
+           lowerName == "randomize";
+}
+
+void SemanticAnalyzer::handleBuiltinFunction(const std::string& functionName, CallExpression& node) {
+    // Process arguments for type checking
+    for (const auto& arg : node.getArguments()) {
+        arg->accept(*this);
+    }
+    
+    // Convert to lowercase for comparison
+    std::string lowerName = functionName;
+    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), 
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    
+    // Set return type based on function
+    if (lowerName == "writeln" || lowerName == "readln" || lowerName == "read" ||
+        lowerName == "insert" || lowerName == "delete" || lowerName == "assign" ||
+        lowerName == "reset" || lowerName == "rewrite" || lowerName == "close" ||
+        lowerName == "new" || lowerName == "dispose" || lowerName == "halt" ||
+        lowerName == "exit" || lowerName == "randomize") {
+        currentExpressionType_ = DataType::VOID;
+    } else if (lowerName == "length" || lowerName == "ord" || lowerName == "pos" ||
+               lowerName == "paramcount" || lowerName == "abs") {
+        currentExpressionType_ = DataType::INTEGER;
+    } else if (lowerName == "chr") {
+        currentExpressionType_ = DataType::CHAR;
+    } else if (lowerName == "copy" || lowerName == "concat" || lowerName == "upcase" ||
+               lowerName == "str" || lowerName == "paramstr") {
+        currentExpressionType_ = DataType::STRING;
+    } else if (lowerName == "sqr" || lowerName == "sqrt" || lowerName == "sin" ||
+               lowerName == "cos" || lowerName == "arctan" || lowerName == "ln" ||
+               lowerName == "exp" || lowerName == "random") {
+        currentExpressionType_ = DataType::REAL;
+    } else if (lowerName == "eof") {
+        currentExpressionType_ = DataType::BOOLEAN;
+    } else {
+        currentExpressionType_ = DataType::UNKNOWN;
+    }
+    currentExpressionTypeName_ = ""; // Built-in functions return built-in types
 }
 
 } // namespace rpascal
