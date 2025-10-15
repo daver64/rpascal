@@ -255,6 +255,15 @@ std::unique_ptr<ProcedureDeclaration> Parser::parseProcedureDeclaration() {
     
     consume(TokenType::SEMICOLON, "Expected ';' after procedure header");
     
+    // Check for forward declaration
+    if (match(TokenType::FORWARD)) {
+        consume(TokenType::SEMICOLON, "Expected ';' after 'forward'");
+        // For forward declarations, create empty body and local variables
+        std::vector<std::unique_ptr<VariableDeclaration>> localVariables;
+        auto body = std::make_unique<CompoundStatement>(std::vector<std::unique_ptr<Statement>>());
+        return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(body), true);
+    }
+    
     // Parse local variables (optional var section)
     auto localVariables = parseLocalVariables();
     
@@ -276,6 +285,15 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
     consume(TokenType::COLON, "Expected ':' before return type");
     std::string returnType = parseTypeName();
     consume(TokenType::SEMICOLON, "Expected ';' after function header");
+    
+    // Check for forward declaration
+    if (match(TokenType::FORWARD)) {
+        consume(TokenType::SEMICOLON, "Expected ';' after 'forward'");
+        // For forward declarations, create empty body and local variables
+        std::vector<std::unique_ptr<VariableDeclaration>> localVariables;
+        auto body = std::make_unique<CompoundStatement>(std::vector<std::unique_ptr<Statement>>());
+        return std::make_unique<FunctionDeclaration>(nameToken.getValue(), std::move(parameters), returnType, std::move(localVariables), std::move(body), true);
+    }
     
     // Parse local variables (optional var section)
     auto localVariables = parseLocalVariables();

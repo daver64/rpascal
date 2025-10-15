@@ -472,6 +472,11 @@ void CppGenerator::visit(VariableDeclaration& node) {
 }
 
 void CppGenerator::visit(ProcedureDeclaration& node) {
+    // Skip forward declarations - they're handled in generateForwardDeclarations
+    if (node.isForward()) {
+        return;
+    }
+    
     emitLine("void " + node.getName() + "(" + generateParameterList(node.getParameters()) + ") {");
     
     increaseIndent();
@@ -489,6 +494,11 @@ void CppGenerator::visit(ProcedureDeclaration& node) {
 }
 
 void CppGenerator::visit(FunctionDeclaration& node) {
+    // Skip forward declarations - they're handled in generateForwardDeclarations
+    if (node.isForward()) {
+        return;
+    }
+    
     std::string returnType = mapPascalTypeToCpp(node.getReturnType());
     emitLine(returnType + " " + node.getName() + "(" + generateParameterList(node.getParameters()) + ") {");
     
@@ -647,10 +657,14 @@ std::string CppGenerator::generateForwardDeclarations(const std::vector<std::uni
     
     for (const auto& decl : declarations) {
         if (auto procDecl = dynamic_cast<ProcedureDeclaration*>(decl.get())) {
-            forward << "void " << procDecl->getName() << "(" << generateParameterList(procDecl->getParameters()) << ");\n";
+            if (procDecl->isForward()) {
+                forward << "void " << procDecl->getName() << "(" << generateParameterList(procDecl->getParameters()) << ");\n";
+            }
         } else if (auto funcDecl = dynamic_cast<FunctionDeclaration*>(decl.get())) {
-            std::string returnType = mapPascalTypeToCpp(funcDecl->getReturnType());
-            forward << returnType << " " << funcDecl->getName() << "(" << generateParameterList(funcDecl->getParameters()) << ");\n";
+            if (funcDecl->isForward()) {
+                std::string returnType = mapPascalTypeToCpp(funcDecl->getReturnType());
+                forward << returnType << " " << funcDecl->getName() << "(" << generateParameterList(funcDecl->getParameters()) << ");\n";
+            }
         }
     }
     

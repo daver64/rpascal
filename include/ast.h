@@ -465,9 +465,11 @@ public:
     ProcedureDeclaration(const std::string& name,
                         std::vector<std::unique_ptr<VariableDeclaration>> parameters,
                         std::vector<std::unique_ptr<VariableDeclaration>> localVariables,
-                        std::unique_ptr<CompoundStatement> body)
+                        std::unique_ptr<CompoundStatement> body,
+                        bool isForward = false)
         : name_(name), parameters_(std::move(parameters)), 
-          localVariables_(std::move(localVariables)), body_(std::move(body)) {}
+          localVariables_(std::move(localVariables)), body_(std::move(body)),
+          isForward_(isForward) {}
     
     void accept(ASTVisitor& visitor) override;
     std::string toString() const override;
@@ -476,12 +478,14 @@ public:
     const std::vector<std::unique_ptr<VariableDeclaration>>& getParameters() const { return parameters_; }
     const std::vector<std::unique_ptr<VariableDeclaration>>& getLocalVariables() const { return localVariables_; }
     CompoundStatement* getBody() const { return body_.get(); }
+    bool isForward() const { return isForward_; }
     
 private:
     std::string name_;
     std::vector<std::unique_ptr<VariableDeclaration>> parameters_;
     std::vector<std::unique_ptr<VariableDeclaration>> localVariables_;
     std::unique_ptr<CompoundStatement> body_;
+    bool isForward_;
 };
 
 class FunctionDeclaration : public Declaration {
@@ -490,9 +494,11 @@ public:
                        std::vector<std::unique_ptr<VariableDeclaration>> parameters,
                        const std::string& returnType,
                        std::vector<std::unique_ptr<VariableDeclaration>> localVariables,
-                       std::unique_ptr<CompoundStatement> body)
+                       std::unique_ptr<CompoundStatement> body,
+                       bool isForward = false)
         : name_(name), parameters_(std::move(parameters)), 
-          returnType_(returnType), localVariables_(std::move(localVariables)), body_(std::move(body)) {}
+          returnType_(returnType), localVariables_(std::move(localVariables)), 
+          body_(std::move(body)), isForward_(isForward) {}
     
     void accept(ASTVisitor& visitor) override;
     std::string toString() const override;
@@ -502,6 +508,7 @@ public:
     const std::string& getReturnType() const { return returnType_; }
     const std::vector<std::unique_ptr<VariableDeclaration>>& getLocalVariables() const { return localVariables_; }
     CompoundStatement* getBody() const { return body_.get(); }
+    bool isForward() const { return isForward_; }
     
 private:
     std::string name_;
@@ -509,6 +516,7 @@ private:
     std::string returnType_;
     std::vector<std::unique_ptr<VariableDeclaration>> localVariables_;
     std::unique_ptr<CompoundStatement> body_;
+    bool isForward_;
 };
 
 // Program node (root of AST)

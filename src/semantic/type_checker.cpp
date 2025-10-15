@@ -447,26 +447,58 @@ void SemanticAnalyzer::visit(VariableDeclaration& node) {
 }
 
 void SemanticAnalyzer::visit(ProcedureDeclaration& node) {
-    // Enter new scope for procedure
-    symbolTable_->enterScope();
+    // Check if this is an implementation of a forward declaration
+    auto existingSymbol = symbolTable_->lookup(node.getName());
     
-    // Create procedure symbol
-    auto procedureSymbol = std::make_shared<Symbol>(node.getName(), SymbolType::PROCEDURE, DataType::VOID, 
-                                                   symbolTable_->getCurrentScopeLevel() - 1);
-    
-    // Add parameters to procedure symbol and current scope
-    for (const auto& param : node.getParameters()) {
-        DataType paramType = SymbolTable::stringToDataType(param->getType());
-        procedureSymbol->addParameter(param->getName(), paramType);
-        symbolTable_->define(param->getName(), SymbolType::PARAMETER, paramType);
+    if (node.isForward()) {
+        // This is a forward declaration
+        if (existingSymbol) {
+            addError("Symbol '" + node.getName() + "' already defined in current scope");
+            return;
+        }
+        
+        // Create procedure symbol for forward declaration
+        auto procedureSymbol = std::make_shared<Symbol>(node.getName(), SymbolType::PROCEDURE, DataType::VOID, 
+                                                       symbolTable_->getCurrentScopeLevel());
+        
+        // Add parameters to procedure symbol
+        for (const auto& param : node.getParameters()) {
+            DataType paramType = SymbolTable::stringToDataType(param->getType());
+            procedureSymbol->addParameter(param->getName(), paramType);
+        }
+        
+        // Define procedure in current scope
+        symbolTable_->define(node.getName(), procedureSymbol);
+        return;
     }
     
-    // Define procedure in parent scope
-    symbolTable_->exitScope();
-    symbolTable_->define(node.getName(), procedureSymbol);
+    // This is an implementation - check if it matches a forward declaration
+    if (existingSymbol && existingSymbol->getSymbolType() == SymbolType::PROCEDURE) {
+        // Verify parameter compatibility (simplified check)
+        if (existingSymbol->getParameters().size() != node.getParameters().size()) {
+            addError("Procedure '" + node.getName() + "' implementation doesn't match forward declaration parameter count");
+            return;
+        }
+        // Note: Could add more detailed parameter type checking here
+    } else if (!existingSymbol) {
+        // No forward declaration - define the procedure
+        auto procedureSymbol = std::make_shared<Symbol>(node.getName(), SymbolType::PROCEDURE, DataType::VOID, 
+                                                       symbolTable_->getCurrentScopeLevel());
+        
+        // Add parameters to procedure symbol
+        for (const auto& param : node.getParameters()) {
+            DataType paramType = SymbolTable::stringToDataType(param->getType());
+            procedureSymbol->addParameter(param->getName(), paramType);
+        }
+        
+        // Define procedure in current scope
+        symbolTable_->define(node.getName(), procedureSymbol);
+    }
+    
+    // Enter new scope for procedure body
     symbolTable_->enterScope();
     
-    // Re-add parameters to current scope
+    // Add parameters to current scope
     for (const auto& param : node.getParameters()) {
         DataType paramType = SymbolTable::stringToDataType(param->getType());
         symbolTable_->define(param->getName(), SymbolType::PARAMETER, paramType);
@@ -485,33 +517,71 @@ void SemanticAnalyzer::visit(ProcedureDeclaration& node) {
 }
 
 void SemanticAnalyzer::visit(FunctionDeclaration& node) {
-    // Enter new scope for function
-    symbolTable_->enterScope();
-    
     DataType returnType = SymbolTable::stringToDataType(node.getReturnType());
     if (returnType == DataType::UNKNOWN) {
         addError("Unknown return type: " + node.getReturnType());
         returnType = DataType::VOID;
     }
     
-    // Create function symbol
-    auto functionSymbol = std::make_shared<Symbol>(node.getName(), SymbolType::FUNCTION, returnType,
-                                                  symbolTable_->getCurrentScopeLevel() - 1);
-    functionSymbol->setReturnType(returnType);
+    // Check if this is an implementation of a forward declaration
+    auto existingSymbol = symbolTable_->lookup(node.getName());
     
-    // Add parameters to function symbol and current scope
-    for (const auto& param : node.getParameters()) {
-        DataType paramType = SymbolTable::stringToDataType(param->getType());
-        functionSymbol->addParameter(param->getName(), paramType);
-        symbolTable_->define(param->getName(), SymbolType::PARAMETER, paramType);
+    if (node.isForward()) {
+        // This is a forward declaration
+        if (existingSymbol) {
+            addError("Symbol '" + node.getName() + "' already defined in current scope");
+            return;
+        }
+        
+        // Create function symbol for forward declaration
+        auto functionSymbol = std::make_shared<Symbol>(node.getName(), SymbolType::FUNCTION, returnType,
+                                                      symbolTable_->getCurrentScopeLevel());
+        functionSymbol->setReturnType(returnType);
+        
+        // Add parameters to function symbol
+        for (const auto& param : node.getParameters()) {
+            DataType paramType = SymbolTable::stringToDataType(param->getType());
+            functionSymbol->addParameter(param->getName(), paramType);
+        }
+        
+        // Define function in current scope
+        symbolTable_->define(node.getName(), functionSymbol);
+        return;
     }
     
-    // Define function in parent scope
-    symbolTable_->exitScope();
-    symbolTable_->define(node.getName(), functionSymbol);
+    // This is an implementation - check if it matches a forward declaration
+    if (existingSymbol && existingSymbol->getSymbolType() == SymbolType::FUNCTION) {
+        // Verify parameter compatibility (simplified check)
+        if (existingSymbol->getParameters().size() != node.getParameters().size()) {
+            addError("Function '" + node.getName() + "' implementation doesn't match forward declaration parameter count");
+            return;
+        }
+        // Verify return type compatibility
+        if (existingSymbol->getReturnType() != returnType) {
+            addError("Function '" + node.getName() + "' implementation return type doesn't match forward declaration");
+            return;
+        }
+        // Note: Could add more detailed parameter type checking here
+    } else if (!existingSymbol) {
+        // No forward declaration - define the function
+        auto functionSymbol = std::make_shared<Symbol>(node.getName(), SymbolType::FUNCTION, returnType,
+                                                      symbolTable_->getCurrentScopeLevel());
+        functionSymbol->setReturnType(returnType);
+        
+        // Add parameters to function symbol
+        for (const auto& param : node.getParameters()) {
+            DataType paramType = SymbolTable::stringToDataType(param->getType());
+            functionSymbol->addParameter(param->getName(), paramType);
+        }
+        
+        // Define function in current scope
+        symbolTable_->define(node.getName(), functionSymbol);
+    }
+    
+    // Enter new scope for function body
     symbolTable_->enterScope();
     
-    // Re-add parameters to current scope
+    // Add parameters to current scope
     for (const auto& param : node.getParameters()) {
         DataType paramType = SymbolTable::stringToDataType(param->getType());
         symbolTable_->define(param->getName(), SymbolType::PARAMETER, paramType);
