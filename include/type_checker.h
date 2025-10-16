@@ -107,6 +107,7 @@ private:
     
     // Built-in function handling
     bool isBuiltinFunction(const std::string& functionName);
+    bool isBuiltinConstant(const std::string& constantName);
     void handleBuiltinFunction(const std::string& functionName, CallExpression& node);
 };
 

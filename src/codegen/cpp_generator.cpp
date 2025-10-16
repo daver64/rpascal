@@ -52,6 +52,12 @@ void CppGenerator::visit(LiteralExpression& node) {
 void CppGenerator::visit(IdentifierExpression& node) {
     std::string name = node.getName();
     
+    // Check if this is a built-in constant
+    if (isBuiltinConstant(name)) {
+        emit(std::to_string(getBuiltinConstantValue(name)));
+        return;
+    }
+    
     // Check if this is a with field access
     if (node.isWithFieldAccess()) {
         emit(node.getWithVariable() + "." + name);
@@ -64,11 +70,25 @@ void CppGenerator::visit(IdentifierExpression& node) {
         if (symbol && symbol->getSymbolType() == SymbolType::PROCEDURE) {
             // Check if this is a builtin procedure and handle it specially
             if (isBuiltinFunction(name)) {
-                if (name == "randomize") {
+                std::string lowerName = name;
+                std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), 
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                
+                if (lowerName == "randomize") {
                     emit("std::srand(static_cast<unsigned int>(std::time(nullptr)))");
                     return;
-                } else if (name == "exit") {
+                } else if (lowerName == "exit") {
                     emit("return");
+                    return;
+                } else if (lowerName == "clrscr") {
+                    emit("#ifdef _WIN32\n    system(\"cls\");\n#else\n    system(\"clear\");\n#endif");
+                    return;
+                } else if (lowerName == "clreol") {
+                    emit("std::cout << \"\\033[K\"");
+                    return;
+                } else if (lowerName == "lowvideo" || lowerName == "highvideo" || lowerName == "normvideo" ||
+                           lowerName == "cursoron" || lowerName == "cursoroff" || lowerName == "nosound") {
+                    emit("/* " + name + " not implemented */");
                     return;
                 }
             }
@@ -911,7 +931,17 @@ std::string CppGenerator::generateHeaders() {
            "#include <cmath>\n"
            "#include <cstdlib>\n"
            "#include <ctime>\n"
-           "#include <cctype>";
+           "#include <cctype>\n"
+           "#include <thread>\n"
+           "#include <chrono>\n"
+           "#include <filesystem>\n"
+           "#ifdef _WIN32\n"
+           "#include <conio.h>\n"
+           "#include <windows.h>\n"
+           "#else\n"
+           "#include <unistd.h>\n"
+           "#include <termios.h>\n"
+           "#endif";
 }
 
 std::string CppGenerator::generateRuntimeIncludes() {
@@ -1463,6 +1493,151 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
     } else if (functionName == "randomize") {
         // randomize -> std::srand(std::time(nullptr))
         emit("std::srand(static_cast<unsigned int>(std::time(nullptr)))");
+    } else if (lowerName == "clrscr") {
+        // clrscr -> system("cls") on Windows, system("clear") on Unix
+        emit("#ifdef _WIN32\n    system(\"cls\");\n#else\n    system(\"clear\");\n#endif");
+    } else if (lowerName == "clreol") {
+        // clreol -> clear to end of line using ANSI escape codes
+        emit("std::cout << \"\\033[K\"");
+    } else if (lowerName == "gotoxy") {
+        // gotoxy(x, y) -> ANSI escape sequence to move cursor
+        emit("std::cout << \"\\033[\" << ");
+        if (node.getArguments().size() >= 2) {
+            node.getArguments()[1]->accept(*this);  // Y coordinate
+            emit(" << \";\" << ");
+            node.getArguments()[0]->accept(*this);  // X coordinate
+        }
+        emit(" << \"H\"");
+    } else if (lowerName == "textcolor") {
+        // textcolor(color) -> ANSI color codes with proper CRT to ANSI mapping
+        emit("std::cout << \"\\033[\" << (");
+        if (!node.getArguments().empty()) {
+            // Map CRT colors to ANSI colors
+            emit("([&]() { int crt_color = ");
+            node.getArguments()[0]->accept(*this);
+            emit("; switch(crt_color & 15) { "
+                 "case 0: return 30; "   // Black -> Black
+                 "case 1: return 34; "   // Blue -> Blue  
+                 "case 2: return 32; "   // Green -> Green
+                 "case 3: return 36; "   // Cyan -> Cyan
+                 "case 4: return 31; "   // Red -> Red
+                 "case 5: return 35; "   // Magenta -> Magenta
+                 "case 6: return 33; "   // Brown -> Yellow
+                 "case 7: return 37; "   // LightGray -> White
+                 "case 8: return 90; "   // DarkGray -> Bright Black
+                 "case 9: return 94; "   // LightBlue -> Bright Blue
+                 "case 10: return 92; "  // LightGreen -> Bright Green
+                 "case 11: return 96; "  // LightCyan -> Bright Cyan
+                 "case 12: return 91; "  // LightRed -> Bright Red
+                 "case 13: return 95; "  // LightMagenta -> Bright Magenta
+                 "case 14: return 93; "  // Yellow -> Bright Yellow
+                 "case 15: return 97; "  // White -> Bright White
+                 "default: return 37; } })()");
+        }
+        emit(") << \"m\"");
+    } else if (lowerName == "textbackground") {
+        // textbackground(color) -> ANSI background color codes
+        emit("std::cout << \"\\033[\" << (40 + (");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(" & 15)) << \"m\"");
+    } else if (lowerName == "delay") {
+        // delay(ms) -> std::this_thread::sleep_for
+        emit("std::this_thread::sleep_for(std::chrono::milliseconds(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit("))");
+    } else if (lowerName == "keypressed") {
+        // keypressed -> check if input is available (platform-specific)
+        emit("#ifdef _WIN32\n    _kbhit()\n#else\n    false\n#endif");
+    } else if (lowerName == "readkey") {
+        // readkey -> read single character without echo
+        emit("#ifdef _WIN32\n    static_cast<char>(_getch())\n#else\n    getchar()\n#endif");
+    } else if (lowerName == "wherex" || lowerName == "wherey") {
+        // wherex/wherey -> return current cursor position (simplified)
+        emit("1");  // Simplified implementation
+    } else if (lowerName == "lowvideo" || lowerName == "highvideo" || lowerName == "normvideo" ||
+               lowerName == "window" || lowerName == "cursoron" || lowerName == "cursoroff" ||
+               lowerName == "sound" || lowerName == "nosound") {
+        // These functions don't have simple cross-platform implementations
+        // Generate empty statements for now
+        emit("/* " + functionName + " not implemented */");
+    } else if (lowerName == "fileexists") {
+        // fileexists(filename) -> std::filesystem::exists
+        emit("std::filesystem::exists(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "directoryexists") {
+        // directoryexists(dirname) -> std::filesystem::is_directory
+        emit("(std::filesystem::exists(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(") && std::filesystem::is_directory(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit("))");
+    } else if (lowerName == "getcurrentdir") {
+        // getcurrentdir -> std::filesystem::current_path().string()
+        emit("std::filesystem::current_path().string()");
+    } else if (lowerName == "setcurrentdir") {
+        // setcurrentdir(dir) -> std::filesystem::current_path(dir)
+        emit("std::filesystem::current_path(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "mkdir") {
+        // mkdir(dir) -> std::filesystem::create_directory
+        emit("std::filesystem::create_directory(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "rmdir") {
+        // rmdir(dir) -> std::filesystem::remove
+        emit("std::filesystem::remove(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "filesize") {
+        // filesize(filename) -> std::filesystem::file_size
+        emit("static_cast<int>(std::filesystem::file_size(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit("))");
+    } else if (lowerName == "getenv") {
+        // getenv(varname) -> std::getenv
+        emit("(std::getenv(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(".c_str()) ? std::string(std::getenv(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(".c_str())) : std::string())");
+    } else if (lowerName == "getdate" || lowerName == "gettime") {
+        // getdate/gettime -> simplified timestamp
+        emit("static_cast<int>(std::time(nullptr))");
+    } else if (lowerName == "exec") {
+        // exec(command) -> std::system
+        emit("std::system(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(".c_str())");
+    } else if (lowerName == "findfirst" || lowerName == "findnext" || lowerName == "findclose" ||
+               lowerName == "getdatetime") {
+        // Complex functions that need proper implementation later
+        emit("/* " + functionName + " not fully implemented */");
     } else {
         // Default function call
         emit(functionName + "(");
@@ -1572,7 +1747,63 @@ bool CppGenerator::isBuiltinFunction(const std::string& name) {
            // System unit I/O functions
            lowerName == "paramcount" || lowerName == "paramstr" ||
            // System unit system functions
-           lowerName == "halt" || lowerName == "exit" || lowerName == "random" || lowerName == "randomize";
+           lowerName == "halt" || lowerName == "exit" || lowerName == "random" || lowerName == "randomize" ||
+           // CRT unit functions
+           lowerName == "clrscr" || lowerName == "clreol" || lowerName == "gotoxy" ||
+           lowerName == "wherex" || lowerName == "wherey" || lowerName == "textcolor" ||
+           lowerName == "textbackground" || lowerName == "lowvideo" || lowerName == "highvideo" ||
+           lowerName == "normvideo" || lowerName == "window" || lowerName == "keypressed" ||
+           lowerName == "readkey" || lowerName == "sound" || lowerName == "nosound" ||
+           lowerName == "delay" || lowerName == "cursoron" || lowerName == "cursoroff" ||
+           // DOS unit functions
+           lowerName == "fileexists" || lowerName == "filesize" || lowerName == "findfirst" ||
+           lowerName == "findnext" || lowerName == "findclose" || lowerName == "getcurrentdir" ||
+           lowerName == "setcurrentdir" || lowerName == "directoryexists" || lowerName == "mkdir" ||
+           lowerName == "rmdir" || lowerName == "getdate" || lowerName == "gettime" ||
+           lowerName == "getdatetime" || lowerName == "getenv" || lowerName == "exec";
+}
+
+bool CppGenerator::isBuiltinConstant(const std::string& name) {
+    // Convert to lowercase for comparison
+    std::string lowerName = name;
+    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), 
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    
+    // CRT color constants
+    return lowerName == "black" || lowerName == "blue" || lowerName == "green" ||
+           lowerName == "cyan" || lowerName == "red" || lowerName == "magenta" ||
+           lowerName == "brown" || lowerName == "lightgray" || lowerName == "darkgray" ||
+           lowerName == "lightblue" || lowerName == "lightgreen" || lowerName == "lightcyan" ||
+           lowerName == "lightred" || lowerName == "lightmagenta" || lowerName == "yellow" ||
+           lowerName == "white" || lowerName == "blink";
+}
+
+int CppGenerator::getBuiltinConstantValue(const std::string& name) {
+    // Convert to lowercase for comparison
+    std::string lowerName = name;
+    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), 
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    
+    // CRT color constants (matching Turbo Pascal 7 values)
+    if (lowerName == "black") return 0;
+    if (lowerName == "blue") return 1;
+    if (lowerName == "green") return 2;
+    if (lowerName == "cyan") return 3;
+    if (lowerName == "red") return 4;
+    if (lowerName == "magenta") return 5;
+    if (lowerName == "brown") return 6;
+    if (lowerName == "lightgray") return 7;
+    if (lowerName == "darkgray") return 8;
+    if (lowerName == "lightblue") return 9;
+    if (lowerName == "lightgreen") return 10;
+    if (lowerName == "lightcyan") return 11;
+    if (lowerName == "lightred") return 12;
+    if (lowerName == "lightmagenta") return 13;
+    if (lowerName == "yellow") return 14;
+    if (lowerName == "white") return 15;
+    if (lowerName == "blink") return 128;
+    
+    return 0; // Default
 }
 
 std::string CppGenerator::escapeCppString(const std::string& str) {

@@ -127,6 +127,8 @@ private:
     
     // Utility methods
     bool isBuiltinFunction(const std::string& name);
+    bool isBuiltinConstant(const std::string& name);
+    int getBuiltinConstantValue(const std::string& name);
     bool isStringExpression(Expression* expr);
     std::string escapeCppString(const std::string& str);
 };

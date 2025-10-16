@@ -60,8 +60,43 @@ void SemanticAnalyzer::visit(LiteralExpression& node) {
 }
 
 void SemanticAnalyzer::visit(IdentifierExpression& node) {
+    std::cout << "DEBUG: Looking up identifier: " << node.getName() << " at scope level: " << symbolTable_->getCurrentScopeLevel() << std::endl;
     auto symbol = symbolTable_->lookup(node.getName());
     if (!symbol) {
+        std::cout << "DEBUG: Symbol not found in symbol table for: " << node.getName() << std::endl;
+        
+        // Check if this is a built-in constant (CRT colors, etc.)
+        if (isBuiltinConstant(node.getName())) {
+            currentExpressionType_ = DataType::INTEGER;
+            currentExpressionTypeName_ = "";
+            return;
+        }
+        
+        // Check if this is a built-in function/procedure without parentheses
+        if (isBuiltinFunction(node.getName())) {
+            std::string lowerName = node.getName();
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), 
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            
+            // Most CRT procedures return void
+            if (lowerName == "clrscr" || lowerName == "clreol" || lowerName == "textcolor" ||
+                lowerName == "textbackground" || lowerName == "lowvideo" || lowerName == "highvideo" ||
+                lowerName == "normvideo" || lowerName == "cursoron" || lowerName == "cursoroff" ||
+                lowerName == "sound" || lowerName == "nosound" || lowerName == "delay") {
+                currentExpressionType_ = DataType::VOID;
+            } else if (lowerName == "wherex" || lowerName == "wherey") {
+                currentExpressionType_ = DataType::INTEGER;
+            } else if (lowerName == "keypressed") {
+                currentExpressionType_ = DataType::BOOLEAN;
+            } else if (lowerName == "readkey") {
+                currentExpressionType_ = DataType::CHAR;
+            } else {
+                currentExpressionType_ = DataType::VOID; // Default for procedures
+            }
+            currentExpressionTypeName_ = "";
+            return;
+        }
+        
         // Check if this identifier could be a field in a with context
         bool foundInWithContext = false;
         
@@ -95,6 +130,7 @@ void SemanticAnalyzer::visit(IdentifierExpression& node) {
         }
         
         if (!foundInWithContext) {
+            std::cout << "DEBUG: About to add error for undefined identifier: " << node.getName() << std::endl;
             addError("Undefined identifier: " + node.getName());
             currentExpressionType_ = DataType::UNKNOWN;
             currentExpressionTypeName_ = "";
@@ -686,6 +722,9 @@ void SemanticAnalyzer::visit(ProcedureDeclaration& node) {
             return;
         }
         
+        std::cout << "DEBUG: Creating forward declaration symbol for procedure: " << node.getName() << std::endl;
+        std::cout << "DEBUG: Current scope level: " << symbolTable_->getCurrentScopeLevel() << std::endl;
+        
         // Create procedure symbol for forward declaration
         auto procedureSymbol = std::make_shared<Symbol>(node.getName(), SymbolType::PROCEDURE, DataType::VOID, 
                                                        symbolTable_->getCurrentScopeLevel());
@@ -715,8 +754,8 @@ void SemanticAnalyzer::visit(ProcedureDeclaration& node) {
             procedureSymbol->addParameter(param->getName(), paramType);
         }
         
-        // Define procedure in symbol table
-        symbolTable_->define(node.getName(), procedureSymbol);
+        // Define procedure in symbol table using overloaded table for consistency with forward declarations
+        symbolTable_->defineOverloaded(node.getName(), procedureSymbol);
     }
     
     // Process nested declarations BEFORE entering procedure scope
@@ -1387,6 +1426,7 @@ std::string SemanticAnalyzer::getFieldTypeFromRecord(const std::string& fieldNam
 }
 
 void SemanticAnalyzer::visit(UsesClause& node) {
+    std::cout << "DEBUG: Processing UsesClause, current scope level: " << symbolTable_->getCurrentScopeLevel() << std::endl;
     // Load and process units
     for (const std::string& unitName : node.getUnits()) {
         std::cout << "DEBUG: Processing unit: " << unitName << std::endl;
@@ -1418,8 +1458,10 @@ void SemanticAnalyzer::visit(UsesClause& node) {
         Unit* loadedUnit = unitLoader_->getLoadedUnit(unitName);
         if (loadedUnit) {
             std::cout << "DEBUG: Processing interface declarations for " << unitName << std::endl;
+            std::cout << "DEBUG: Scope level before processing interface: " << symbolTable_->getCurrentScopeLevel() << std::endl;
             // Import symbols from the unit's interface section
             for (const auto& decl : loadedUnit->getInterfaceDeclarations()) {
+                std::cout << "DEBUG: Processing interface declaration: " << decl->toString() << std::endl;
                 // Process the declaration to add symbols to our symbol table
                 decl->accept(*this);
             }
@@ -1475,7 +1517,35 @@ bool SemanticAnalyzer::isBuiltinFunction(const std::string& functionName) {
            lowerName == "paramcount" || lowerName == "paramstr" ||
            // System unit system functions
            lowerName == "halt" || lowerName == "exit" || lowerName == "random" || 
-           lowerName == "randomize";
+           lowerName == "randomize" ||
+           // CRT unit functions
+           lowerName == "clrscr" || lowerName == "clreol" || lowerName == "gotoxy" ||
+           lowerName == "wherex" || lowerName == "wherey" || lowerName == "textcolor" ||
+           lowerName == "textbackground" || lowerName == "lowvideo" || lowerName == "highvideo" ||
+           lowerName == "normvideo" || lowerName == "window" || lowerName == "keypressed" ||
+           lowerName == "readkey" || lowerName == "sound" || lowerName == "nosound" ||
+           lowerName == "delay" || lowerName == "cursoron" || lowerName == "cursoroff" ||
+           // DOS unit functions
+           lowerName == "fileexists" || lowerName == "filesize" || lowerName == "findfirst" ||
+           lowerName == "findnext" || lowerName == "findclose" || lowerName == "getcurrentdir" ||
+           lowerName == "setcurrentdir" || lowerName == "directoryexists" || lowerName == "mkdir" ||
+           lowerName == "rmdir" || lowerName == "getdate" || lowerName == "gettime" ||
+           lowerName == "getdatetime" || lowerName == "getenv" || lowerName == "exec";
+}
+
+bool SemanticAnalyzer::isBuiltinConstant(const std::string& constantName) {
+    // Convert to lowercase for comparison
+    std::string lowerName = constantName;
+    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), 
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    
+    // CRT color constants
+    return lowerName == "black" || lowerName == "blue" || lowerName == "green" ||
+           lowerName == "cyan" || lowerName == "red" || lowerName == "magenta" ||
+           lowerName == "brown" || lowerName == "lightgray" || lowerName == "darkgray" ||
+           lowerName == "lightblue" || lowerName == "lightgreen" || lowerName == "lightcyan" ||
+           lowerName == "lightred" || lowerName == "lightmagenta" || lowerName == "yellow" ||
+           lowerName == "white" || lowerName == "blink";
 }
 
 void SemanticAnalyzer::handleBuiltinFunction(const std::string& functionName, CallExpression& node) {
@@ -1494,21 +1564,44 @@ void SemanticAnalyzer::handleBuiltinFunction(const std::string& functionName, Ca
         lowerName == "insert" || lowerName == "delete" || lowerName == "assign" ||
         lowerName == "reset" || lowerName == "rewrite" || lowerName == "close" ||
         lowerName == "new" || lowerName == "dispose" || lowerName == "halt" ||
-        lowerName == "exit" || lowerName == "randomize") {
+        lowerName == "exit" || lowerName == "randomize" ||
+        // CRT procedures (no return value)
+        lowerName == "clrscr" || lowerName == "clreol" || lowerName == "gotoxy" ||
+        lowerName == "textcolor" || lowerName == "textbackground" || lowerName == "lowvideo" ||
+        lowerName == "highvideo" || lowerName == "normvideo" || lowerName == "window" ||
+        lowerName == "sound" || lowerName == "nosound" || lowerName == "delay" ||
+        lowerName == "cursoron" || lowerName == "cursoroff" ||
+        // DOS procedures (no return value)
+        lowerName == "findfirst" || lowerName == "findnext" || lowerName == "findclose" ||
+        lowerName == "setcurrentdir" || lowerName == "mkdir" || lowerName == "rmdir" ||
+        lowerName == "getdatetime") {
         currentExpressionType_ = DataType::VOID;
     } else if (lowerName == "length" || lowerName == "ord" || lowerName == "pos" ||
-               lowerName == "paramcount" || lowerName == "abs") {
+               lowerName == "paramcount" || lowerName == "abs" ||
+               // CRT functions returning integer
+               lowerName == "wherex" || lowerName == "wherey" ||
+               // DOS functions returning integer
+               lowerName == "filesize" || lowerName == "getdate" || lowerName == "gettime" ||
+               lowerName == "exec") {
         currentExpressionType_ = DataType::INTEGER;
-    } else if (lowerName == "chr") {
+    } else if (lowerName == "chr" ||
+               // CRT functions returning char
+               lowerName == "readkey") {
         currentExpressionType_ = DataType::CHAR;
     } else if (lowerName == "copy" || lowerName == "concat" || lowerName == "upcase" ||
-               lowerName == "str" || lowerName == "paramstr") {
+               lowerName == "str" || lowerName == "paramstr" ||
+               // DOS functions returning string
+               lowerName == "getcurrentdir" || lowerName == "getenv") {
         currentExpressionType_ = DataType::STRING;
     } else if (lowerName == "sqr" || lowerName == "sqrt" || lowerName == "sin" ||
                lowerName == "cos" || lowerName == "arctan" || lowerName == "ln" ||
                lowerName == "exp" || lowerName == "random") {
         currentExpressionType_ = DataType::REAL;
-    } else if (lowerName == "eof") {
+    } else if (lowerName == "eof" ||
+               // CRT functions returning boolean
+               lowerName == "keypressed" ||
+               // DOS functions returning boolean
+               lowerName == "fileexists" || lowerName == "directoryexists") {
         currentExpressionType_ = DataType::BOOLEAN;
     } else {
         currentExpressionType_ = DataType::UNKNOWN;
