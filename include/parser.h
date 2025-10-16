@@ -47,6 +47,7 @@ private:
     std::unique_ptr<Declaration> parseTypeDeclaration();
     std::unique_ptr<LabelDeclaration> parseLabelDeclaration();
     std::vector<std::unique_ptr<VariableDeclaration>> parseLocalVariables();
+    std::vector<std::unique_ptr<Declaration>> parseNestedDeclarations();
     std::unique_ptr<ProcedureDeclaration> parseProcedureDeclaration(bool isInterface = false);
     std::unique_ptr<FunctionDeclaration> parseFunctionDeclaration(bool isInterface = false);
     std::unique_ptr<ProcedureDeclaration> parseProcedureDeclaration();

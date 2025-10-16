@@ -405,6 +405,25 @@ std::vector<std::unique_ptr<VariableDeclaration>> Parser::parseLocalVariables() 
     return localVars;
 }
 
+std::vector<std::unique_ptr<Declaration>> Parser::parseNestedDeclarations() {
+    std::vector<std::unique_ptr<Declaration>> declarations;
+    
+    // Parse nested procedures and functions
+    while (check(TokenType::PROCEDURE) || check(TokenType::FUNCTION)) {
+        if (check(TokenType::PROCEDURE)) {
+            advance(); // consume 'procedure'
+            auto procDecl = parseProcedureDeclaration(false);
+            declarations.push_back(std::move(procDecl));
+        } else if (check(TokenType::FUNCTION)) {
+            advance(); // consume 'function'
+            auto funcDecl = parseFunctionDeclaration(false);
+            declarations.push_back(std::move(funcDecl));
+        }
+    }
+    
+    return declarations;
+}
+
 std::unique_ptr<ProcedureDeclaration> Parser::parseProcedureDeclaration(bool isInterface) {
     Token nameToken = consume(TokenType::IDENTIFIER, "Expected procedure name");
     
@@ -419,8 +438,9 @@ std::unique_ptr<ProcedureDeclaration> Parser::parseProcedureDeclaration(bool isI
     // In interface section, we only need the signature
     if (isInterface) {
         std::vector<std::unique_ptr<VariableDeclaration>> localVariables;
+        std::vector<std::unique_ptr<Declaration>> nestedDeclarations;
         auto body = std::make_unique<CompoundStatement>(std::vector<std::unique_ptr<Statement>>());
-        return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(body), true);
+        return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(nestedDeclarations), std::move(body), true);
     }
     
     // Check for forward declaration
@@ -428,17 +448,21 @@ std::unique_ptr<ProcedureDeclaration> Parser::parseProcedureDeclaration(bool isI
         consume(TokenType::SEMICOLON, "Expected ';' after 'forward'");
         // For forward declarations, create empty body and local variables
         std::vector<std::unique_ptr<VariableDeclaration>> localVariables;
+        std::vector<std::unique_ptr<Declaration>> nestedDeclarations;
         auto body = std::make_unique<CompoundStatement>(std::vector<std::unique_ptr<Statement>>());
-        return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(body), true);
+        return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(nestedDeclarations), std::move(body), true);
     }
     
     // Parse local variables (optional var section)
     auto localVariables = parseLocalVariables();
     
+    // Parse nested procedures and functions
+    auto nestedDeclarations = parseNestedDeclarations();
+    
     auto body = parseCompoundStatement();
     consume(TokenType::SEMICOLON, "Expected ';' after procedure body");
     
-    return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(body));
+    return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(nestedDeclarations), std::move(body));
 }
 
 std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration(bool isInterface) {
@@ -457,8 +481,9 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration(bool isInt
     // In interface section, we only need the signature
     if (isInterface) {
         std::vector<std::unique_ptr<VariableDeclaration>> localVariables;
+        std::vector<std::unique_ptr<Declaration>> nestedDeclarations;
         auto body = std::make_unique<CompoundStatement>(std::vector<std::unique_ptr<Statement>>());
-        return std::make_unique<FunctionDeclaration>(nameToken.getValue(), std::move(parameters), returnType, std::move(localVariables), std::move(body), true);
+        return std::make_unique<FunctionDeclaration>(nameToken.getValue(), std::move(parameters), returnType, std::move(localVariables), std::move(nestedDeclarations), std::move(body), true);
     }
     
     // Check for forward declaration
@@ -466,17 +491,21 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration(bool isInt
         consume(TokenType::SEMICOLON, "Expected ';' after 'forward'");
         // For forward declarations, create empty body and local variables
         std::vector<std::unique_ptr<VariableDeclaration>> localVariables;
+        std::vector<std::unique_ptr<Declaration>> nestedDeclarations;
         auto body = std::make_unique<CompoundStatement>(std::vector<std::unique_ptr<Statement>>());
-        return std::make_unique<FunctionDeclaration>(nameToken.getValue(), std::move(parameters), returnType, std::move(localVariables), std::move(body), true);
+        return std::make_unique<FunctionDeclaration>(nameToken.getValue(), std::move(parameters), returnType, std::move(localVariables), std::move(nestedDeclarations), std::move(body), true);
     }
     
     // Parse local variables (optional var section)
     auto localVariables = parseLocalVariables();
     
+    // Parse nested procedures and functions
+    auto nestedDeclarations = parseNestedDeclarations();
+    
     auto body = parseCompoundStatement();
     consume(TokenType::SEMICOLON, "Expected ';' after function body");
     
-    return std::make_unique<FunctionDeclaration>(nameToken.getValue(), std::move(parameters), returnType, std::move(localVariables), std::move(body));
+    return std::make_unique<FunctionDeclaration>(nameToken.getValue(), std::move(parameters), returnType, std::move(localVariables), std::move(nestedDeclarations), std::move(body));
 }
 
 std::unique_ptr<Statement> Parser::parseStatement() {

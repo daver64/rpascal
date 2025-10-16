@@ -581,11 +581,13 @@ public:
     ProcedureDeclaration(const std::string& name,
                         std::vector<std::unique_ptr<VariableDeclaration>> parameters,
                         std::vector<std::unique_ptr<VariableDeclaration>> localVariables,
+                        std::vector<std::unique_ptr<Declaration>> nestedDeclarations,
                         std::unique_ptr<CompoundStatement> body,
                         bool isForward = false)
         : name_(name), parameters_(std::move(parameters)), 
-          localVariables_(std::move(localVariables)), body_(std::move(body)),
-          isForward_(isForward) {}
+          localVariables_(std::move(localVariables)), 
+          nestedDeclarations_(std::move(nestedDeclarations)),
+          body_(std::move(body)), isForward_(isForward) {}
     
     void accept(ASTVisitor& visitor) override;
     std::string toString() const override;
@@ -593,6 +595,7 @@ public:
     const std::string& getName() const { return name_; }
     const std::vector<std::unique_ptr<VariableDeclaration>>& getParameters() const { return parameters_; }
     const std::vector<std::unique_ptr<VariableDeclaration>>& getLocalVariables() const { return localVariables_; }
+    const std::vector<std::unique_ptr<Declaration>>& getNestedDeclarations() const { return nestedDeclarations_; }
     CompoundStatement* getBody() const { return body_.get(); }
     bool isForward() const { return isForward_; }
     
@@ -600,6 +603,7 @@ private:
     std::string name_;
     std::vector<std::unique_ptr<VariableDeclaration>> parameters_;
     std::vector<std::unique_ptr<VariableDeclaration>> localVariables_;
+    std::vector<std::unique_ptr<Declaration>> nestedDeclarations_;
     std::unique_ptr<CompoundStatement> body_;
     bool isForward_;
 };
@@ -610,10 +614,12 @@ public:
                        std::vector<std::unique_ptr<VariableDeclaration>> parameters,
                        const std::string& returnType,
                        std::vector<std::unique_ptr<VariableDeclaration>> localVariables,
+                       std::vector<std::unique_ptr<Declaration>> nestedDeclarations,
                        std::unique_ptr<CompoundStatement> body,
                        bool isForward = false)
         : name_(name), parameters_(std::move(parameters)), 
           returnType_(returnType), localVariables_(std::move(localVariables)), 
+          nestedDeclarations_(std::move(nestedDeclarations)),
           body_(std::move(body)), isForward_(isForward) {}
     
     void accept(ASTVisitor& visitor) override;
@@ -623,6 +629,7 @@ public:
     const std::vector<std::unique_ptr<VariableDeclaration>>& getParameters() const { return parameters_; }
     const std::string& getReturnType() const { return returnType_; }
     const std::vector<std::unique_ptr<VariableDeclaration>>& getLocalVariables() const { return localVariables_; }
+    const std::vector<std::unique_ptr<Declaration>>& getNestedDeclarations() const { return nestedDeclarations_; }
     CompoundStatement* getBody() const { return body_.get(); }
     bool isForward() const { return isForward_; }
     
@@ -631,6 +638,7 @@ private:
     std::vector<std::unique_ptr<VariableDeclaration>> parameters_;
     std::string returnType_;
     std::vector<std::unique_ptr<VariableDeclaration>> localVariables_;
+    std::vector<std::unique_ptr<Declaration>> nestedDeclarations_;
     std::unique_ptr<CompoundStatement> body_;
     bool isForward_;
 };

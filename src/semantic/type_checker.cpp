@@ -715,8 +715,14 @@ void SemanticAnalyzer::visit(ProcedureDeclaration& node) {
             procedureSymbol->addParameter(param->getName(), paramType);
         }
         
-        // Define procedure using overloaded symbol table
-        symbolTable_->defineOverloaded(node.getName(), procedureSymbol);
+        // Define procedure in symbol table
+        symbolTable_->define(node.getName(), procedureSymbol);
+    }
+    
+    // Process nested declarations BEFORE entering procedure scope
+    // This allows nested procedures to be visible in the parent scope
+    for (const auto& nestedDecl : node.getNestedDeclarations()) {
+        nestedDecl->accept(*this);
     }
     
     // Enter new scope for procedure body
@@ -800,8 +806,14 @@ void SemanticAnalyzer::visit(FunctionDeclaration& node) {
             functionSymbol->addParameter(param->getName(), paramType);
         }
         
-        // Define function using overloaded symbol table
+        // Define function in symbol table using overloaded table for proper overload support
         symbolTable_->defineOverloaded(node.getName(), functionSymbol);
+    }
+    
+    // Process nested declarations BEFORE entering function scope
+    // This allows nested procedures/functions to be visible in the parent scope
+    for (const auto& nestedDecl : node.getNestedDeclarations()) {
+        nestedDecl->accept(*this);
     }
     
     // Enter new scope for function body
@@ -1022,6 +1034,11 @@ void SemanticAnalyzer::checkFunctionCall(CallExpression& node) {
     
     // Try to find function with matching signature
     auto symbol = symbolTable_->lookupFunction(functionName, argTypes);
+    
+    if (!symbol) {
+        // Try regular lookup for non-overloaded functions
+        symbol = symbolTable_->lookup(functionName);
+    }
     
     if (!symbol) {
         // Check if any overloads exist for better error message

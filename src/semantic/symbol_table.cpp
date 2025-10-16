@@ -105,6 +105,16 @@ std::shared_ptr<Symbol> Scope::lookupFunction(const std::string& name, const std
         }
     }
     
+    // Also check regular symbols for non-overloaded functions and procedures
+    auto regularIt = symbols_.find(name);
+    if (regularIt != symbols_.end()) {
+        auto symbol = regularIt->second;
+        if ((symbol->getSymbolType() == SymbolType::FUNCTION || symbol->getSymbolType() == SymbolType::PROCEDURE) 
+            && symbol->matchesSignature(paramTypes)) {
+            return symbol;
+        }
+    }
+    
     // Check parent scope
     if (parent_) {
         return parent_->lookupFunction(name, paramTypes);

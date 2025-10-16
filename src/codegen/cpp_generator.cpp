@@ -664,6 +664,12 @@ void CppGenerator::visit(ProcedureDeclaration& node) {
         return;
     }
     
+    // Generate nested procedures and functions BEFORE the parent procedure
+    // This ensures they are declared before being called
+    for (const auto& nestedDecl : node.getNestedDeclarations()) {
+        nestedDecl->accept(*this);
+    }
+    
     std::string mangledName = generateMangledFunctionName(node.getName(), node.getParameters());
     emitLine("void " + mangledName + "(" + generateParameterList(node.getParameters()) + ") {");
     
@@ -674,7 +680,20 @@ void CppGenerator::visit(ProcedureDeclaration& node) {
         localVar->accept(*this);
     }
     
+    // Enter procedure scope and add parameters for proper type resolution during code generation
+    symbolTable_->enterScope();
+    
+    // Add parameters to current scope for type resolution during function call generation
+    for (const auto& param : node.getParameters()) {
+        DataType paramType = symbolTable_->resolveDataType(param->getType());
+        symbolTable_->define(param->getName(), SymbolType::PARAMETER, paramType);
+    }
+    
     node.getBody()->accept(*this);
+    
+    // Exit procedure scope
+    symbolTable_->exitScope();
+    
     decreaseIndent();
     
     emitLine("}");
@@ -685,6 +704,12 @@ void CppGenerator::visit(FunctionDeclaration& node) {
     // Skip forward declarations - they're handled in generateForwardDeclarations
     if (node.isForward()) {
         return;
+    }
+    
+    // Generate nested procedures and functions BEFORE the parent function
+    // This ensures they are declared before being called
+    for (const auto& nestedDecl : node.getNestedDeclarations()) {
+        nestedDecl->accept(*this);
     }
     
     std::string returnType = mapPascalTypeToCpp(node.getReturnType());
@@ -703,11 +728,23 @@ void CppGenerator::visit(FunctionDeclaration& node) {
         localVar->accept(*this);
     }
     
+    // Enter function scope and add parameters for proper type resolution during code generation
+    symbolTable_->enterScope();
+    
+    // Add parameters to current scope for type resolution during function call generation
+    for (const auto& param : node.getParameters()) {
+        DataType paramType = symbolTable_->resolveDataType(param->getType());
+        symbolTable_->define(param->getName(), SymbolType::PARAMETER, paramType);
+    }
+    
     currentFunction_ = mangledName;  // Use mangled name for internal tracking
     currentFunctionOriginalName_ = node.getName();  // Store original name for return assignments
     node.getBody()->accept(*this);
     currentFunction_ = "";
     currentFunctionOriginalName_ = "";
+    
+    // Exit function scope
+    symbolTable_->exitScope();
     
     // Return the result
     emitIndent();
