@@ -10,6 +10,7 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <set>
 
 namespace rpascal {
 
@@ -52,8 +53,11 @@ public:
     void visit(RepeatStatement& node) override;
     void visit(CaseStatement& node) override;
     void visit(WithStatement& node) override;
+    void visit(LabelStatement& node) override;
+    void visit(GotoStatement& node) override;
     
     void visit(ConstantDeclaration& node) override;
+    void visit(LabelDeclaration& node) override;
     void visit(TypeDefinition& node) override;
     void visit(RecordTypeDefinition& node) override;
     void visit(VariableDeclaration& node) override;
@@ -79,6 +83,10 @@ private:
         DataType recordType;         // Type of the with variable
     };
     std::vector<WithContext> withContextStack_;
+    
+    // Label tracking for goto statements
+    std::set<std::string> declaredLabels_;
+    std::vector<std::string> referencedLabels_;
     
     // Unit loading system
     std::unique_ptr<UnitLoader> unitLoader_;

@@ -375,9 +375,9 @@ void CppGenerator::visit(AssignmentStatement& node) {
     
     // Special handling for Pascal function return value assignment
     auto targetId = dynamic_cast<IdentifierExpression*>(node.getTarget());
-    if (targetId && !currentFunction_.empty() && targetId->getName() == currentFunction_) {
+    if (targetId && !currentFunctionOriginalName_.empty() && targetId->getName() == currentFunctionOriginalName_) {
         // This is an assignment to the function name (return value)
-        emit(currentFunction_ + "_result = ");
+        emit(currentFunctionOriginalName_ + "_result = ");
     } else {
         node.getTarget()->accept(*this);
         emit(" = ");
@@ -522,11 +522,30 @@ void CppGenerator::visit(WithStatement& node) {
     }
 }
 
+void CppGenerator::visit(LabelStatement& node) {
+    // Generate C++ label
+    emitIndent();
+    emitLine("label_" + node.getLabel() + ":;");
+}
+
+void CppGenerator::visit(GotoStatement& node) {
+    // Generate C++ goto statement
+    emitIndent();
+    emitLine("goto label_" + node.getTarget() + ";");
+}
+
 void CppGenerator::visit(ConstantDeclaration& node) {
     emitIndent();
     emit("const auto " + node.getName() + " = ");
     node.getValue()->accept(*this);
     emitLine(";");
+}
+
+void CppGenerator::visit(LabelDeclaration& node) {
+    // Label declarations don't generate any C++ code directly
+    // The labels themselves are generated when referenced in LabelStatement
+    // This is just for Pascal syntax compliance
+    (void)node; // Suppress unused parameter warning
 }
 
 void CppGenerator::visit(TypeDefinition& node) {
@@ -574,6 +593,53 @@ void CppGenerator::visit(RecordTypeDefinition& node) {
         emitLine(mapPascalTypeToCpp(field.getType()) + " " + field.getName() + ";");
     }
     
+    // Generate variant part if present
+    if (node.hasVariantPart()) {
+        const VariantPart* variantPart = node.getVariantPart();
+        
+        // Generate the selector field
+        emitIndent();
+        emitLine(mapPascalTypeToCpp(variantPart->getSelectorType()) + " " + variantPart->getSelectorName() + ";");
+        
+        // For variant records, generate all variant fields as regular fields
+        // This simplifies the implementation and matches Pascal's behavior where
+        // all variant fields are accessible (with programmer responsibility for correctness)
+        for (const auto& variantCase : variantPart->getCases()) {
+            for (const auto& field : variantCase->getFields()) {
+                emitIndent();
+                emitLine(mapPascalTypeToCpp(field.getType()) + " " + field.getName() + ";");
+            }
+        }
+        
+        // Add constructor to handle initialization
+        emitLine("");
+        emitIndent();
+        emitLine("// Default constructor");
+        emitIndent();
+        emit(node.getName() + "() : ");
+        
+        // Initialize all fields
+        bool first = true;
+        for (const auto& field : node.getFields()) {
+            if (!first) emit(", ");
+            emit(field.getName() + "()");
+            first = false;
+        }
+        
+        if (variantPart) {
+            if (!first) emit(", ");
+            emit(variantPart->getSelectorName() + "()");
+            
+            for (const auto& variantCase : variantPart->getCases()) {
+                for (const auto& field : variantCase->getFields()) {
+                    emit(", " + field.getName() + "()");
+                }
+            }
+        }
+        
+        emitLine(" {}");
+    }
+    
     decreaseIndent();
     emitLine("};");
     emitLine("");
@@ -598,7 +664,8 @@ void CppGenerator::visit(ProcedureDeclaration& node) {
         return;
     }
     
-    emitLine("void " + node.getName() + "(" + generateParameterList(node.getParameters()) + ") {");
+    std::string mangledName = generateMangledFunctionName(node.getName(), node.getParameters());
+    emitLine("void " + mangledName + "(" + generateParameterList(node.getParameters()) + ") {");
     
     increaseIndent();
     
@@ -621,7 +688,9 @@ void CppGenerator::visit(FunctionDeclaration& node) {
     }
     
     std::string returnType = mapPascalTypeToCpp(node.getReturnType());
-    emitLine(returnType + " " + node.getName() + "(" + generateParameterList(node.getParameters()) + ") {");
+    std::string mangledName = generateMangledFunctionName(node.getName(), node.getParameters());
+    
+    emitLine(returnType + " " + mangledName + "(" + generateParameterList(node.getParameters()) + ") {");
     
     increaseIndent();
     
@@ -634,9 +703,11 @@ void CppGenerator::visit(FunctionDeclaration& node) {
         localVar->accept(*this);
     }
     
-    currentFunction_ = node.getName();
+    currentFunction_ = mangledName;  // Use mangled name for internal tracking
+    currentFunctionOriginalName_ = node.getName();  // Store original name for return assignments
     node.getBody()->accept(*this);
     currentFunction_ = "";
+    currentFunctionOriginalName_ = "";
     
     // Return the result
     emitIndent();
@@ -853,12 +924,14 @@ std::string CppGenerator::generateForwardDeclarations(const std::vector<std::uni
     for (const auto& decl : declarations) {
         if (auto procDecl = dynamic_cast<ProcedureDeclaration*>(decl.get())) {
             if (procDecl->isForward()) {
-                forward << "void " << procDecl->getName() << "(" << generateParameterList(procDecl->getParameters()) << ");\n";
+                std::string mangledName = generateMangledFunctionName(procDecl->getName(), procDecl->getParameters());
+                forward << "void " << mangledName << "(" << generateParameterList(procDecl->getParameters()) << ");\n";
             }
         } else if (auto funcDecl = dynamic_cast<FunctionDeclaration*>(decl.get())) {
             if (funcDecl->isForward()) {
                 std::string returnType = mapPascalTypeToCpp(funcDecl->getReturnType());
-                forward << returnType << " " << funcDecl->getName() << "(" << generateParameterList(funcDecl->getParameters()) << ");\n";
+                std::string mangledName = generateMangledFunctionName(funcDecl->getName(), funcDecl->getParameters());
+                forward << returnType << " " << mangledName << "(" << generateParameterList(funcDecl->getParameters()) << ");\n";
             }
         }
     }
@@ -950,8 +1023,69 @@ void CppGenerator::generateFunctionCall(CallExpression& node) {
     if (isBuiltinFunction(functionName)) {
         generateBuiltinCall(node, functionName);
     } else {
-        // Regular function call
-        emit(functionName + "(");
+        // For overloaded functions, we need to resolve which one to call
+        // Build argument types for proper overload resolution
+        std::vector<DataType> argTypes;
+        for (const auto& arg : node.getArguments()) {
+            DataType argType = DataType::UNKNOWN;
+            
+            // Try to determine argument type
+            if (auto literal = dynamic_cast<LiteralExpression*>(arg.get())) {
+                // Handle literals
+                if (literal->getToken().getType() == TokenType::INTEGER_LITERAL) {
+                    argType = DataType::INTEGER;
+                } else if (literal->getToken().getType() == TokenType::REAL_LITERAL) {
+                    argType = DataType::REAL;
+                } else if (literal->getToken().getType() == TokenType::STRING_LITERAL) {
+                    argType = DataType::STRING;
+                } else if (literal->getToken().getType() == TokenType::CHAR_LITERAL) {
+                    argType = DataType::CHAR;
+                }
+            } else if (auto identifier = dynamic_cast<IdentifierExpression*>(arg.get())) {
+                // Look up variable in symbol table
+                auto symbol = symbolTable_->lookup(identifier->getName());
+                if (symbol) {
+                    argType = symbol->getDataType();
+                }
+            }
+            // TODO: Handle other expression types (array access, field access, etc.)
+            
+            argTypes.push_back(argType);
+        }
+        
+        // Try to find the matching function overload
+        auto functionSymbol = symbolTable_->lookupFunction(functionName, argTypes);
+        if (functionSymbol) {
+            // Generate mangled name based on the found function's parameters
+            std::vector<std::unique_ptr<VariableDeclaration>> dummyParams;
+            // We need to create dummy parameter declarations to use the existing mangling function
+            // This is a bit of a hack - in a real implementation, we'd store the mangled name in the symbol
+            
+            // For now, let's build the mangled name directly from the parameter types
+            std::string mangledName = functionName;
+            if (!argTypes.empty()) {
+                mangledName += "_";
+                for (size_t i = 0; i < argTypes.size(); ++i) {
+                    if (i > 0) mangledName += "_";
+                    
+                    switch (argTypes[i]) {
+                        case DataType::INTEGER: mangledName += "int"; break;
+                        case DataType::REAL: mangledName += "real"; break;
+                        case DataType::BOOLEAN: mangledName += "bool"; break;
+                        case DataType::CHAR: mangledName += "char"; break;
+                        case DataType::STRING: mangledName += "str"; break;
+                        default: mangledName += "unk"; break;
+                    }
+                }
+            }
+            
+            emit(mangledName + "(");
+        } else {
+            // Fallback to original name if no overload found
+            emit(functionName + "(");
+        }
+        
+        // Generate arguments
         for (size_t i = 0; i < node.getArguments().size(); ++i) {
             if (i > 0) emit(", ");
             node.getArguments()[i]->accept(*this);
@@ -1344,6 +1478,40 @@ std::string CppGenerator::generateParameterList(const std::vector<std::unique_pt
     }
     
     return params.str();
+}
+
+std::string CppGenerator::generateMangledFunctionName(const std::string& functionName, const std::vector<std::unique_ptr<VariableDeclaration>>& parameters) {
+    // Generate a unique C++ function name based on Pascal function name and parameter types
+    std::ostringstream mangledName;
+    mangledName << functionName;
+    
+    // Only add mangling if there are parameters (to avoid mangling simple functions)
+    if (!parameters.empty()) {
+        mangledName << "_";
+        for (size_t i = 0; i < parameters.size(); ++i) {
+            if (i > 0) mangledName << "_";
+            
+            std::string paramType = parameters[i]->getType();
+            // Convert Pascal type names to safe C++ identifier parts
+            if (paramType == "integer") mangledName << "int";
+            else if (paramType == "real") mangledName << "real";
+            else if (paramType == "boolean") mangledName << "bool";
+            else if (paramType == "char") mangledName << "char";
+            else if (paramType == "string") mangledName << "str";
+            else {
+                // For custom types, sanitize the name
+                for (char c : paramType) {
+                    if (std::isalnum(c)) {
+                        mangledName << c;
+                    } else {
+                        mangledName << "_";
+                    }
+                }
+            }
+        }
+    }
+    
+    return mangledName.str();
 }
 
 bool CppGenerator::isBuiltinFunction(const std::string& name) {

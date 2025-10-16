@@ -45,6 +45,7 @@ private:
     std::unique_ptr<ConstantDeclaration> parseConstantDeclaration();
     std::unique_ptr<VariableDeclaration> parseVariableDeclaration();
     std::unique_ptr<Declaration> parseTypeDeclaration();
+    std::unique_ptr<LabelDeclaration> parseLabelDeclaration();
     std::vector<std::unique_ptr<VariableDeclaration>> parseLocalVariables();
     std::unique_ptr<ProcedureDeclaration> parseProcedureDeclaration(bool isInterface = false);
     std::unique_ptr<FunctionDeclaration> parseFunctionDeclaration(bool isInterface = false);
@@ -60,6 +61,7 @@ private:
     std::unique_ptr<RepeatStatement> parseRepeatStatement();
     std::unique_ptr<CaseStatement> parseCaseStatement();
     std::unique_ptr<WithStatement> parseWithStatement();
+    std::unique_ptr<GotoStatement> parseGotoStatement();
     std::unique_ptr<ExpressionStatement> parseExpressionStatement();
     
     std::unique_ptr<Expression> parseExpression();
@@ -76,7 +78,9 @@ private:
     // Helper methods
     std::string parseTypeName();
     std::string parseTypeDefinition();
-    std::vector<RecordField> parseRecordFields();
+    std::pair<std::vector<RecordField>, std::unique_ptr<VariantPart>> parseRecordFields();
+    std::unique_ptr<VariantPart> parseVariantPart();
+    std::vector<std::unique_ptr<VariantCase>> parseVariantCases();
     std::vector<std::unique_ptr<VariableDeclaration>> parseParameterList();
     std::vector<std::unique_ptr<Expression>> parseArgumentList();
     

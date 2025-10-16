@@ -230,6 +230,24 @@ std::string WithStatement::toString() const {
     return result;
 }
 
+// LabelStatement
+void LabelStatement::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string LabelStatement::toString() const {
+    return "LabelStatement(" + label_ + ":)";
+}
+
+// GotoStatement
+void GotoStatement::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string GotoStatement::toString() const {
+    return "GotoStatement(goto " + target_ + ")";
+}
+
 // ConstantDeclaration
 void ConstantDeclaration::accept(ASTVisitor& visitor) {
     visitor.visit(*this);
@@ -237,6 +255,21 @@ void ConstantDeclaration::accept(ASTVisitor& visitor) {
 
 std::string ConstantDeclaration::toString() const {
     return "ConstantDeclaration(" + name_ + " = " + value_->toString() + ")";
+}
+
+// LabelDeclaration
+void LabelDeclaration::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string LabelDeclaration::toString() const {
+    std::string result = "LabelDeclaration(label ";
+    for (size_t i = 0; i < labels_.size(); ++i) {
+        if (i > 0) result += ", ";
+        result += labels_[i];
+    }
+    result += ")";
+    return result;
 }
 
 // TypeDefinition
@@ -259,7 +292,37 @@ std::string RecordTypeDefinition::toString() const {
         if (i > 0) result += "; ";
         result += fields_[i].toString();
     }
+    if (variantPart_) {
+        if (!fields_.empty()) result += "; ";
+        result += variantPart_->toString();
+    }
     result += " end)";
+    return result;
+}
+
+// VariantCase
+std::string VariantCase::toString() const {
+    std::string result;
+    for (size_t i = 0; i < values_.size(); ++i) {
+        if (i > 0) result += ", ";
+        result += values_[i]->toString();
+    }
+    result += ": (";
+    for (size_t i = 0; i < fields_.size(); ++i) {
+        if (i > 0) result += "; ";
+        result += fields_[i].toString();
+    }
+    result += ")";
+    return result;
+}
+
+// VariantPart
+std::string VariantPart::toString() const {
+    std::string result = "case " + selectorName_ + ": " + selectorType_ + " of ";
+    for (size_t i = 0; i < cases_.size(); ++i) {
+        if (i > 0) result += "; ";
+        result += cases_[i]->toString();
+    }
     return result;
 }
 

@@ -38,6 +38,31 @@ std::string Symbol::toString() const {
     return oss.str();
 }
 
+std::string Symbol::getSignature() const {
+    std::ostringstream oss;
+    oss << name_ << "(";
+    for (size_t i = 0; i < parameters_.size(); ++i) {
+        if (i > 0) oss << ",";
+        oss << SymbolTable::dataTypeToString(parameters_[i].second);
+    }
+    oss << ")";
+    return oss.str();
+}
+
+bool Symbol::matchesSignature(const std::vector<DataType>& paramTypes) const {
+    if (parameters_.size() != paramTypes.size()) {
+        return false;
+    }
+    
+    for (size_t i = 0; i < parameters_.size(); ++i) {
+        if (parameters_[i].second != paramTypes[i]) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
 // Scope implementation
 void Scope::define(const std::string& name, std::shared_ptr<Symbol> symbol) {
     symbols_[name] = symbol;
@@ -63,6 +88,47 @@ std::shared_ptr<Symbol> Scope::lookupLocal(const std::string& name) {
         return it->second;
     }
     return nullptr;
+}
+
+void Scope::defineOverloaded(const std::string& name, std::shared_ptr<Symbol> symbol) {
+    overloadedSymbols_[name].push_back(symbol);
+}
+
+std::shared_ptr<Symbol> Scope::lookupFunction(const std::string& name, const std::vector<DataType>& paramTypes) {
+    // First check overloaded functions
+    auto it = overloadedSymbols_.find(name);
+    if (it != overloadedSymbols_.end()) {
+        for (const auto& symbol : it->second) {
+            if (symbol->matchesSignature(paramTypes)) {
+                return symbol;
+            }
+        }
+    }
+    
+    // Check parent scope
+    if (parent_) {
+        return parent_->lookupFunction(name, paramTypes);
+    }
+    
+    return nullptr;
+}
+
+std::vector<std::shared_ptr<Symbol>> Scope::lookupAllOverloads(const std::string& name) {
+    std::vector<std::shared_ptr<Symbol>> result;
+    
+    // Get overloads from this scope
+    auto it = overloadedSymbols_.find(name);
+    if (it != overloadedSymbols_.end()) {
+        result = it->second;
+    }
+    
+    // Add overloads from parent scopes
+    if (parent_) {
+        auto parentOverloads = parent_->lookupAllOverloads(name);
+        result.insert(result.end(), parentOverloads.begin(), parentOverloads.end());
+    }
+    
+    return result;
 }
 
 // SymbolTable implementation
@@ -114,6 +180,18 @@ std::shared_ptr<Symbol> SymbolTable::lookup(const std::string& name) {
 
 std::shared_ptr<Symbol> SymbolTable::lookupLocal(const std::string& name) {
     return currentScope_->lookupLocal(name);
+}
+
+void SymbolTable::defineOverloaded(const std::string& name, std::shared_ptr<Symbol> symbol) {
+    currentScope_->defineOverloaded(name, symbol);
+}
+
+std::shared_ptr<Symbol> SymbolTable::lookupFunction(const std::string& name, const std::vector<DataType>& paramTypes) {
+    return currentScope_->lookupFunction(name, paramTypes);
+}
+
+std::vector<std::shared_ptr<Symbol>> SymbolTable::lookupAllOverloads(const std::string& name) {
+    return currentScope_->lookupAllOverloads(name);
 }
 
 DataType SymbolTable::stringToDataType(const std::string& typeStr) {

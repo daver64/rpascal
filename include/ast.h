@@ -382,6 +382,34 @@ private:
     std::unique_ptr<Statement> body_;
 };
 
+class LabelStatement : public Statement {
+public:
+    explicit LabelStatement(const std::string& label)
+        : label_(label) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::string& getLabel() const { return label_; }
+    
+private:
+    std::string label_;
+};
+
+class GotoStatement : public Statement {
+public:
+    explicit GotoStatement(const std::string& target)
+        : target_(target) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::string& getTarget() const { return target_; }
+    
+private:
+    std::string target_;
+};
+
 // Array Type representation
 class ArrayType {
 public:
@@ -421,6 +449,20 @@ private:
     std::unique_ptr<Expression> value_;
 };
 
+class LabelDeclaration : public Declaration {
+public:
+    explicit LabelDeclaration(std::vector<std::string> labels)
+        : labels_(std::move(labels)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const std::vector<std::string>& getLabels() const { return labels_; }
+    
+private:
+    std::vector<std::string> labels_;
+};
+
 class TypeDefinition : public Declaration {
 public:
     TypeDefinition(const std::string& name, const std::string& definition)
@@ -453,21 +495,62 @@ private:
     std::string type_;
 };
 
+// Variant case for variant records
+class VariantCase {
+public:
+    VariantCase(std::vector<std::unique_ptr<Expression>> values, 
+                std::vector<RecordField> fields)
+        : values_(std::move(values)), fields_(std::move(fields)) {}
+    
+    const std::vector<std::unique_ptr<Expression>>& getValues() const { return values_; }
+    const std::vector<RecordField>& getFields() const { return fields_; }
+    
+    std::string toString() const;
+    
+private:
+    std::vector<std::unique_ptr<Expression>> values_;
+    std::vector<RecordField> fields_;
+};
+
+// Variant part of a record
+class VariantPart {
+public:
+    VariantPart(const std::string& selectorName, const std::string& selectorType,
+                std::vector<std::unique_ptr<VariantCase>> cases)
+        : selectorName_(selectorName), selectorType_(selectorType), 
+          cases_(std::move(cases)) {}
+    
+    const std::string& getSelectorName() const { return selectorName_; }
+    const std::string& getSelectorType() const { return selectorType_; }
+    const std::vector<std::unique_ptr<VariantCase>>& getCases() const { return cases_; }
+    
+    std::string toString() const;
+    
+private:
+    std::string selectorName_;
+    std::string selectorType_;
+    std::vector<std::unique_ptr<VariantCase>> cases_;
+};
+
 // Record type definition  
 class RecordTypeDefinition : public Declaration {
 public:
-    RecordTypeDefinition(const std::string& name, std::vector<RecordField> fields)
-        : name_(name), fields_(std::move(fields)) {}
+    RecordTypeDefinition(const std::string& name, std::vector<RecordField> fields,
+                        std::unique_ptr<VariantPart> variantPart = nullptr)
+        : name_(name), fields_(std::move(fields)), variantPart_(std::move(variantPart)) {}
     
     void accept(ASTVisitor& visitor) override;
     std::string toString() const override;
     
     const std::string& getName() const { return name_; }
     const std::vector<RecordField>& getFields() const { return fields_; }
+    const VariantPart* getVariantPart() const { return variantPart_.get(); }
+    bool hasVariantPart() const { return variantPart_ != nullptr; }
     
 private:
     std::string name_;
     std::vector<RecordField> fields_;
+    std::unique_ptr<VariantPart> variantPart_;
 };
 
 class VariableDeclaration : public Declaration {
@@ -645,8 +728,11 @@ public:
     virtual void visit(RepeatStatement& node) = 0;
     virtual void visit(CaseStatement& node) = 0;
     virtual void visit(WithStatement& node) = 0;
+    virtual void visit(LabelStatement& node) = 0;
+    virtual void visit(GotoStatement& node) = 0;
     
     virtual void visit(ConstantDeclaration& node) = 0;
+    virtual void visit(LabelDeclaration& node) = 0;
     virtual void visit(TypeDefinition& node) = 0;
     virtual void visit(RecordTypeDefinition& node) = 0;
     virtual void visit(VariableDeclaration& node) = 0;

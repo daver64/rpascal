@@ -495,12 +495,42 @@ void SemanticAnalyzer::visit(WithStatement& node) {
     }
 }
 
+void SemanticAnalyzer::visit(LabelStatement& node) {
+    // Check if the label was declared
+    const std::string& label = node.getLabel();
+    if (declaredLabels_.find(label) == declaredLabels_.end()) {
+        addError("Undeclared label: " + label);
+    }
+}
+
+void SemanticAnalyzer::visit(GotoStatement& node) {
+    // Track referenced labels for validation
+    const std::string& target = node.getTarget();
+    referencedLabels_.push_back(target);
+    
+    // Check if the label was declared (this will be validated at the end of scope)
+    if (declaredLabels_.find(target) == declaredLabels_.end()) {
+        addError("Goto references undeclared label: " + target);
+    }
+}
+
 void SemanticAnalyzer::visit(ConstantDeclaration& node) {
     // Analyze the constant value expression
     node.getValue()->accept(*this);
     
     // Register the constant in the symbol table
     symbolTable_->define(node.getName(), SymbolType::CONSTANT, currentExpressionType_);
+}
+
+void SemanticAnalyzer::visit(LabelDeclaration& node) {
+    // Register all declared labels
+    for (const std::string& label : node.getLabels()) {
+        if (declaredLabels_.find(label) != declaredLabels_.end()) {
+            addError("Label already declared: " + label);
+        } else {
+            declaredLabels_.insert(label);
+        }
+    }
 }
 
 void SemanticAnalyzer::visit(TypeDefinition& node) {
@@ -553,6 +583,22 @@ void SemanticAnalyzer::visit(RecordTypeDefinition& node) {
     for (const auto& field : node.getFields()) {
         recordDef += field.getName() + ":" + field.getType() + "; ";
     }
+    
+    // Add variant part fields if present
+    if (node.hasVariantPart()) {
+        const VariantPart* variantPart = node.getVariantPart();
+        
+        // Add the selector field
+        recordDef += variantPart->getSelectorName() + ":" + variantPart->getSelectorType() + "; ";
+        
+        // Add all variant case fields (all fields from all cases are accessible)
+        for (const auto& variantCase : variantPart->getCases()) {
+            for (const auto& field : variantCase->getFields()) {
+                recordDef += field.getName() + ":" + field.getType() + "; ";
+            }
+        }
+    }
+    
     recordDef += "end";
     
     symbol->setTypeDefinition(recordDef);
@@ -563,6 +609,27 @@ void SemanticAnalyzer::visit(RecordTypeDefinition& node) {
         DataType fieldType = symbolTable_->resolveDataType(field.getType());
         if (fieldType == DataType::UNKNOWN) {
             addError("Unknown field type '" + field.getType() + "' in record '" + node.getName() + "'");
+        }
+    }
+    
+    // Validate variant part field types if present
+    if (node.hasVariantPart()) {
+        const VariantPart* variantPart = node.getVariantPart();
+        
+        // Validate selector type
+        DataType selectorType = symbolTable_->resolveDataType(variantPart->getSelectorType());
+        if (selectorType == DataType::UNKNOWN) {
+            addError("Unknown selector type '" + variantPart->getSelectorType() + "' in variant record '" + node.getName() + "'");
+        }
+        
+        // Validate all variant case field types
+        for (const auto& variantCase : variantPart->getCases()) {
+            for (const auto& field : variantCase->getFields()) {
+                DataType fieldType = symbolTable_->resolveDataType(field.getType());
+                if (fieldType == DataType::UNKNOWN) {
+                    addError("Unknown field type '" + field.getType() + "' in variant record '" + node.getName() + "'");
+                }
+            }
         }
     }
 }
@@ -602,13 +669,20 @@ void SemanticAnalyzer::visit(VariableDeclaration& node) {
 }
 
 void SemanticAnalyzer::visit(ProcedureDeclaration& node) {
-    // Check if this is an implementation of a forward declaration
-    auto existingSymbol = symbolTable_->lookup(node.getName());
+    // Build parameter types vector for overload resolution
+    std::vector<DataType> paramTypes;
+    for (const auto& param : node.getParameters()) {
+        DataType paramType = symbolTable_->resolveDataType(param->getType());
+        paramTypes.push_back(paramType);
+    }
+    
+    // Check for existing procedure with same signature
+    auto existingProcedure = symbolTable_->lookupFunction(node.getName(), paramTypes);
     
     if (node.isForward()) {
         // This is a forward declaration
-        if (existingSymbol) {
-            addError("Symbol '" + node.getName() + "' already defined in current scope");
+        if (existingProcedure) {
+            addError("Procedure '" + node.getName() + "' with this signature already declared");
             return;
         }
         
@@ -622,21 +696,16 @@ void SemanticAnalyzer::visit(ProcedureDeclaration& node) {
             procedureSymbol->addParameter(param->getName(), paramType);
         }
         
-        // Define procedure in current scope
-        symbolTable_->define(node.getName(), procedureSymbol);
+        // Define procedure using overloaded symbol table
+        symbolTable_->defineOverloaded(node.getName(), procedureSymbol);
         return;
     }
     
     // This is an implementation - check if it matches a forward declaration
-    if (existingSymbol && existingSymbol->getSymbolType() == SymbolType::PROCEDURE) {
-        // Verify parameter compatibility (simplified check)
-        if (existingSymbol->getParameters().size() != node.getParameters().size()) {
-            addError("Procedure '" + node.getName() + "' implementation doesn't match forward declaration parameter count");
-            return;
-        }
-        // Note: Could add more detailed parameter type checking here
-    } else if (!existingSymbol) {
-        // No forward declaration - define the procedure
+    if (existingProcedure && existingProcedure->getSymbolType() == SymbolType::PROCEDURE) {
+        // Forward declaration exists with same signature - verified by lookup
+    } else if (!existingProcedure) {
+        // No forward declaration with this signature - define new overloaded procedure
         auto procedureSymbol = std::make_shared<Symbol>(node.getName(), SymbolType::PROCEDURE, DataType::VOID, 
                                                        symbolTable_->getCurrentScopeLevel());
         
@@ -646,8 +715,8 @@ void SemanticAnalyzer::visit(ProcedureDeclaration& node) {
             procedureSymbol->addParameter(param->getName(), paramType);
         }
         
-        // Define procedure in current scope
-        symbolTable_->define(node.getName(), procedureSymbol);
+        // Define procedure using overloaded symbol table
+        symbolTable_->defineOverloaded(node.getName(), procedureSymbol);
     }
     
     // Enter new scope for procedure body
@@ -678,13 +747,20 @@ void SemanticAnalyzer::visit(FunctionDeclaration& node) {
         returnType = DataType::VOID;
     }
     
-    // Check if this is an implementation of a forward declaration
-    auto existingSymbol = symbolTable_->lookup(node.getName());
+    // Build parameter types vector for overload resolution
+    std::vector<DataType> paramTypes;
+    for (const auto& param : node.getParameters()) {
+        DataType paramType = symbolTable_->resolveDataType(param->getType());
+        paramTypes.push_back(paramType);
+    }
+    
+    // Check for existing function with same signature
+    auto existingFunction = symbolTable_->lookupFunction(node.getName(), paramTypes);
     
     if (node.isForward()) {
         // This is a forward declaration
-        if (existingSymbol) {
-            addError("Symbol '" + node.getName() + "' already defined in current scope");
+        if (existingFunction) {
+            addError("Function '" + node.getName() + "' with this signature already declared");
             return;
         }
         
@@ -699,26 +775,21 @@ void SemanticAnalyzer::visit(FunctionDeclaration& node) {
             functionSymbol->addParameter(param->getName(), paramType);
         }
         
-        // Define function in current scope
-        symbolTable_->define(node.getName(), functionSymbol);
+        // Define function using overloaded symbol table
+        symbolTable_->defineOverloaded(node.getName(), functionSymbol);
         return;
     }
     
     // This is an implementation - check if it matches a forward declaration
-    if (existingSymbol && existingSymbol->getSymbolType() == SymbolType::FUNCTION) {
-        // Verify parameter compatibility (simplified check)
-        if (existingSymbol->getParameters().size() != node.getParameters().size()) {
-            addError("Function '" + node.getName() + "' implementation doesn't match forward declaration parameter count");
-            return;
-        }
-        // Verify return type compatibility
-        if (existingSymbol->getReturnType() != returnType) {
+    if (existingFunction && existingFunction->getSymbolType() == SymbolType::FUNCTION) {
+        // Forward declaration exists with same signature - verify compatibility
+        if (existingFunction->getReturnType() != returnType) {
             addError("Function '" + node.getName() + "' implementation return type doesn't match forward declaration");
             return;
         }
-        // Note: Could add more detailed parameter type checking here
-    } else if (!existingSymbol) {
-        // No forward declaration - define the function
+        // Note: Parameter types already match since we found by signature
+    } else if (!existingFunction) {
+        // No forward declaration with this signature - define new overloaded function
         auto functionSymbol = std::make_shared<Symbol>(node.getName(), SymbolType::FUNCTION, returnType,
                                                       symbolTable_->getCurrentScopeLevel());
         functionSymbol->setReturnType(returnType);
@@ -729,8 +800,8 @@ void SemanticAnalyzer::visit(FunctionDeclaration& node) {
             functionSymbol->addParameter(param->getName(), paramType);
         }
         
-        // Define function in current scope
-        symbolTable_->define(node.getName(), functionSymbol);
+        // Define function using overloaded symbol table
+        symbolTable_->defineOverloaded(node.getName(), functionSymbol);
     }
     
     // Enter new scope for function body
@@ -942,10 +1013,24 @@ void SemanticAnalyzer::checkFunctionCall(CallExpression& node) {
         return;
     }
     
-    auto symbol = symbolTable_->lookup(functionName);
+    // Build argument types for overload resolution
+    std::vector<DataType> argTypes;
+    for (const auto& arg : node.getArguments()) {
+        DataType argType = getExpressionType(arg.get());
+        argTypes.push_back(argType);
+    }
+    
+    // Try to find function with matching signature
+    auto symbol = symbolTable_->lookupFunction(functionName, argTypes);
     
     if (!symbol) {
-        addError("Undefined function: " + functionName);
+        // Check if any overloads exist for better error message
+        auto allOverloads = symbolTable_->lookupAllOverloads(functionName);
+        if (!allOverloads.empty()) {
+            addError("No matching overload for function '" + functionName + "' with given argument types");
+        } else {
+            addError("Undefined function: " + functionName);
+        }
         currentExpressionType_ = DataType::UNKNOWN;
         return;
     }

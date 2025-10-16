@@ -68,6 +68,10 @@ public:
     void setReturnType(DataType returnType) { returnType_ = returnType; }
     DataType getReturnType() const { return returnType_; }
     
+    // Function signature for overloading
+    std::string getSignature() const;
+    bool matchesSignature(const std::vector<DataType>& paramTypes) const;
+    
     std::string toString() const;
     
 private:
@@ -93,6 +97,11 @@ public:
     std::shared_ptr<Symbol> lookup(const std::string& name);
     std::shared_ptr<Symbol> lookupLocal(const std::string& name);
     
+    // Overloaded function support
+    void defineOverloaded(const std::string& name, std::shared_ptr<Symbol> symbol);
+    std::shared_ptr<Symbol> lookupFunction(const std::string& name, const std::vector<DataType>& paramTypes);
+    std::vector<std::shared_ptr<Symbol>> lookupAllOverloads(const std::string& name);
+    
     int getLevel() const { return level_; }
     Scope* getParent() const { return parent_; }
     
@@ -104,6 +113,7 @@ private:
     int level_;
     Scope* parent_;
     std::unordered_map<std::string, std::shared_ptr<Symbol>> symbols_;
+    std::unordered_map<std::string, std::vector<std::shared_ptr<Symbol>>> overloadedSymbols_;
 };
 
 // Main symbol table
@@ -122,6 +132,11 @@ public:
     void define(const std::string& name, std::shared_ptr<Symbol> symbol);
     std::shared_ptr<Symbol> lookup(const std::string& name);
     std::shared_ptr<Symbol> lookupLocal(const std::string& name);
+    
+    // Overloaded function support
+    void defineOverloaded(const std::string& name, std::shared_ptr<Symbol> symbol);
+    std::shared_ptr<Symbol> lookupFunction(const std::string& name, const std::vector<DataType>& paramTypes);
+    std::vector<std::shared_ptr<Symbol>> lookupAllOverloads(const std::string& name);
     
     // Type utilities
     static DataType stringToDataType(const std::string& typeStr);

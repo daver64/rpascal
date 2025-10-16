@@ -28,7 +28,11 @@ std::unique_ptr<Program> Parser::parseProgram() {
         // Parse declarations
         std::vector<std::unique_ptr<Declaration>> declarations;
         while (!check(TokenType::BEGIN) && !isAtEnd()) {
-            if (match(TokenType::CONST)) {
+            if (match(TokenType::LABEL)) {
+                // Handle label declarations
+                auto labelDecl = parseLabelDeclaration();
+                declarations.push_back(std::move(labelDecl));
+            } else if (match(TokenType::CONST)) {
                 // Handle multiple constant declarations after 'const'
                 do {
                     Token constNameToken = consume(TokenType::IDENTIFIER, "Expected constant name");
@@ -49,11 +53,11 @@ std::unique_ptr<Program> Parser::parseProgram() {
                     // Check if this is a record type definition
                     if (check(TokenType::RECORD)) {
                         advance(); // consume 'record'
-                        std::vector<RecordField> fields = parseRecordFields();
+                        auto [fields, variantPart] = parseRecordFields();
                         consume(TokenType::END, "Expected 'end' after record fields");
                         consume(TokenType::SEMICOLON, "Expected ';' after record definition");
                         
-                        auto recordDecl = std::make_unique<RecordTypeDefinition>(typeNameToken.getValue(), std::move(fields));
+                        auto recordDecl = std::make_unique<RecordTypeDefinition>(typeNameToken.getValue(), std::move(fields), std::move(variantPart));
                         declarations.push_back(std::move(recordDecl));
                     } else {
                         // Handle other type definitions (arrays, sets, etc.)
@@ -289,6 +293,8 @@ std::unique_ptr<Declaration> Parser::parseDeclaration(bool isInterface) {
             return parseVariableDeclaration();
         } else if (match(TokenType::TYPE)) {
             return parseTypeDeclaration();
+        } else if (match(TokenType::LABEL)) {
+            return parseLabelDeclaration();
         } else if (check(TokenType::PROCEDURE)) {
             advance(); // consume PROCEDURE
             return parseProcedureDeclaration(isInterface);
@@ -489,6 +495,34 @@ std::unique_ptr<Statement> Parser::parseStatement() {
             return parseCaseStatement();
         } else if (match(TokenType::WITH)) {
             return parseWithStatement();
+        } else if (match(TokenType::GOTO)) {
+            return parseGotoStatement();
+        } else if (check(TokenType::INTEGER_LITERAL)) {
+            // Check if this is a label (number followed by colon)
+            Token labelToken = currentToken_;
+            advance();
+            if (match(TokenType::COLON)) {
+                // This is a label - create a compound statement with the label and the following statement
+                std::vector<std::unique_ptr<Statement>> statements;
+                statements.push_back(std::make_unique<LabelStatement>(labelToken.getValue()));
+                
+                // Parse the statement that follows the label
+                auto followingStmt = parseStatement();
+                if (followingStmt) {
+                    statements.push_back(std::move(followingStmt));
+                }
+                
+                return std::make_unique<CompoundStatement>(std::move(statements));
+            } else {
+                // Not a label, backtrack by creating an expression from the integer
+                auto expr = std::make_unique<LiteralExpression>(labelToken);
+                if (match(TokenType::ASSIGN)) {
+                    auto value = parseExpression();
+                    return std::make_unique<AssignmentStatement>(std::move(expr), std::move(value));
+                } else {
+                    return std::make_unique<ExpressionStatement>(std::move(expr));
+                }
+            }
         } else {
             // Try to parse as assignment or expression statement
             auto expr = parseExpression();
@@ -1149,11 +1183,12 @@ bool Parser::isRightAssociative(TokenType) const {
     return false;
 }
 
-std::vector<RecordField> Parser::parseRecordFields() {
+std::pair<std::vector<RecordField>, std::unique_ptr<VariantPart>> Parser::parseRecordFields() {
     std::vector<RecordField> fields;
+    std::unique_ptr<VariantPart> variantPart = nullptr;
     
     // Parse record fields: name1, name2: type; name3: type;
-    while (!check(TokenType::END) && !isAtEnd()) {
+    while (!check(TokenType::END) && !check(TokenType::CASE) && !isAtEnd()) {
         // Parse field names (can be multiple names with same type)
         std::vector<std::string> fieldNames;
         
@@ -1178,7 +1213,12 @@ std::vector<RecordField> Parser::parseRecordFields() {
         consume(TokenType::SEMICOLON, "Expected ';' after field declaration");
     }
     
-    return fields;
+    // Check for variant part
+    if (check(TokenType::CASE)) {
+        variantPart = parseVariantPart();
+    }
+    
+    return std::make_pair(std::move(fields), std::move(variantPart));
 }
 
 std::unique_ptr<UsesClause> Parser::parseUsesClause() {
@@ -1200,6 +1240,103 @@ std::unique_ptr<UsesClause> Parser::parseUsesClause() {
     consume(TokenType::SEMICOLON, "Expected ';' after uses clause");
     
     return std::make_unique<UsesClause>(std::move(units));
+}
+
+std::unique_ptr<LabelDeclaration> Parser::parseLabelDeclaration() {
+    // 'label' token already consumed
+    std::vector<std::string> labels;
+    
+    do {
+        Token labelToken = consume(TokenType::INTEGER_LITERAL, "Expected label number");
+        labels.push_back(labelToken.getValue());
+    } while (match(TokenType::COMMA));
+    
+    consume(TokenType::SEMICOLON, "Expected ';' after label declaration");
+    
+    return std::make_unique<LabelDeclaration>(std::move(labels));
+}
+
+std::unique_ptr<GotoStatement> Parser::parseGotoStatement() {
+    // 'goto' token already consumed
+    Token targetToken = consume(TokenType::INTEGER_LITERAL, "Expected label number after goto");
+    return std::make_unique<GotoStatement>(targetToken.getValue());
+}
+
+std::unique_ptr<VariantPart> Parser::parseVariantPart() {
+    // Parse: case selector: type of cases
+    consume(TokenType::CASE, "Expected 'case'");
+    
+    Token selectorToken = consume(TokenType::IDENTIFIER, "Expected selector name");
+    std::string selectorName = selectorToken.getValue();
+    
+    consume(TokenType::COLON, "Expected ':' after selector name");
+    std::string selectorType = parseTypeName();
+    
+    consume(TokenType::OF, "Expected 'of' after selector type");
+    
+    auto cases = parseVariantCases();
+    
+    return std::make_unique<VariantPart>(selectorName, selectorType, std::move(cases));
+}
+
+std::vector<std::unique_ptr<VariantCase>> Parser::parseVariantCases() {
+    std::vector<std::unique_ptr<VariantCase>> cases;
+    
+    while (!check(TokenType::END) && !isAtEnd()) {
+        // Parse case values (can be multiple: value1, value2, value3)
+        std::vector<std::unique_ptr<Expression>> values;
+        values.push_back(parseExpression());
+        
+        // Parse additional values separated by commas
+        while (match(TokenType::COMMA)) {
+            values.push_back(parseExpression());
+        }
+        
+        consume(TokenType::COLON, "Expected ':' after case value(s)");
+        
+        // Parse case fields: (field1: type1; field2: type2)
+        consume(TokenType::LEFT_PAREN, "Expected '(' before case fields");
+        
+        std::vector<RecordField> caseFields;
+        if (!check(TokenType::RIGHT_PAREN)) {
+            // Parse field list
+            do {
+                std::vector<std::string> fieldNames;
+                
+                Token fieldName = consume(TokenType::IDENTIFIER, "Expected field name");
+                fieldNames.push_back(fieldName.getValue());
+                
+                // Handle multiple field names: name1, name2, name3: type
+                while (match(TokenType::COMMA)) {
+                    Token nextName = consume(TokenType::IDENTIFIER, "Expected field name after ','");
+                    fieldNames.push_back(nextName.getValue());
+                }
+                
+                consume(TokenType::COLON, "Expected ':' after field name(s)");
+                std::string fieldType = parseTypeName();
+                
+                // Create a field for each name with the same type
+                for (const std::string& name : fieldNames) {
+                    caseFields.emplace_back(name, fieldType);
+                }
+                
+            } while (match(TokenType::SEMICOLON) && !check(TokenType::RIGHT_PAREN));
+        }
+        
+        consume(TokenType::RIGHT_PAREN, "Expected ')' after case fields");
+        
+        cases.push_back(std::make_unique<VariantCase>(std::move(values), std::move(caseFields)));
+        
+        // Consume optional semicolon
+        if (match(TokenType::SEMICOLON)) {
+            // Continue parsing more cases
+        } else if (check(TokenType::END)) {
+            // End of variant cases
+            break;
+        }
+    }
+    
+    return cases;
 }
 
 } // namespace rpascal

@@ -43,8 +43,11 @@ public:
     void visit(RepeatStatement& node) override;
     void visit(CaseStatement& node) override;
     void visit(WithStatement& node) override;
+    void visit(LabelStatement& node) override;
+    void visit(GotoStatement& node) override;
     
     void visit(ConstantDeclaration& node) override;
+    void visit(LabelDeclaration& node) override;
     void visit(TypeDefinition& node) override;
     void visit(RecordTypeDefinition& node) override;
     void visit(VariableDeclaration& node) override;
@@ -61,6 +64,7 @@ private:
     std::ostringstream output_;
     int indentLevel_;
     std::string currentFunction_;
+    std::string currentFunctionOriginalName_;
     
     // Array type information for proper indexing
     struct ArrayDimension {
@@ -119,6 +123,7 @@ private:
     // Variable and function management
     std::string generateVariableDeclaration(const std::string& name, const std::string& type, Expression* initializer = nullptr);
     std::string generateParameterList(const std::vector<std::unique_ptr<VariableDeclaration>>& parameters);
+    std::string generateMangledFunctionName(const std::string& functionName, const std::vector<std::unique_ptr<VariableDeclaration>>& parameters);
     
     // Utility methods
     bool isBuiltinFunction(const std::string& name);
