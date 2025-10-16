@@ -240,11 +240,20 @@ void SemanticAnalyzer::visit(DereferenceExpression& node) {
         return;
     }
     
-    // Dereferencing a pointer returns the pointee type
-    // For now, we need to look up the symbol to get the pointee type
-    // This is a simplified implementation - would need proper symbol lookup
-    // For basic testing, assume integer pointers dereference to integers
-    currentExpressionType_ = DataType::INTEGER; // Simplified for testing
+    // Try to determine the pointee type from the operand
+    // If the operand is an identifier, look up its pointee type
+    if (auto identExpr = dynamic_cast<IdentifierExpression*>(node.getOperand())) {
+        auto symbol = symbolTable_->lookup(identExpr->getName());
+        if (symbol && symbol->getDataType() == DataType::POINTER) {
+            currentExpressionType_ = symbol->getPointeeType();
+            currentExpressionTypeName_ = symbol->getPointeeTypeName();
+            return;
+        }
+    }
+    
+    // For basic testing, assume integer pointers if we can't determine the type
+    currentExpressionType_ = DataType::INTEGER;
+    currentExpressionTypeName_ = "";
 }
 
 void SemanticAnalyzer::visit(CallExpression& node) {
@@ -570,13 +579,34 @@ void SemanticAnalyzer::visit(LabelDeclaration& node) {
 }
 
 void SemanticAnalyzer::visit(TypeDefinition& node) {
+    // Check if this is a pointer type definition (starts with ^)
+    std::string definition = node.getDefinition();
+    if (!definition.empty() && definition[0] == '^') {
+        // This is a pointer type
+        std::string pointeeTypeName = definition.substr(1); // Remove the ^
+        
+        // Register as a pointer type
+        auto symbol = std::make_shared<Symbol>(node.getName(), SymbolType::TYPE_DEF, DataType::POINTER);
+        symbol->setTypeDefinition(definition);
+        symbol->setPointeeTypeName(pointeeTypeName);
+        
+        // Try to resolve the pointee type
+        DataType pointeeType = symbolTable_->stringToDataType(pointeeTypeName);
+        if (pointeeType == DataType::UNKNOWN) {
+            pointeeType = symbolTable_->resolveDataType(pointeeTypeName);
+        }
+        symbol->setPointeeType(pointeeType);
+        
+        symbolTable_->define(node.getName(), symbol);
+        return;
+    }
+    
     // Register the type definition in the symbol table as a custom type
     auto symbol = std::make_shared<Symbol>(node.getName(), SymbolType::TYPE_DEF, DataType::CUSTOM);
-    symbol->setTypeDefinition(node.getDefinition());
+    symbol->setTypeDefinition(definition);
     symbolTable_->define(node.getName(), symbol);
     
     // Check if this is an enumeration type and register enum values
-    std::string definition = node.getDefinition();
     if (definition.length() > 2 && definition[0] == '(' && definition.back() == ')') {
         // This is an enumeration type like "(Red, Green, Blue)"
         std::string enumValues = definition.substr(1, definition.length() - 2); // Remove parentheses
@@ -672,6 +702,15 @@ void SemanticAnalyzer::visit(RecordTypeDefinition& node) {
 
 void SemanticAnalyzer::visit(VariableDeclaration& node) {
     DataType dataType = symbolTable_->resolveDataType(node.getType());
+    
+    // If not a built-in type, check if it's a user-defined type
+    if (dataType == DataType::UNKNOWN) {
+        auto typeSymbol = symbolTable_->lookup(node.getType());
+        if (typeSymbol && typeSymbol->getSymbolType() == SymbolType::TYPE_DEF) {
+            dataType = typeSymbol->getDataType();
+        }
+    }
+    
     if (dataType == DataType::UNKNOWN) {
         addError("Unknown data type: " + node.getType());
         return;
@@ -682,12 +721,20 @@ void SemanticAnalyzer::visit(VariableDeclaration& node) {
     
     // Handle pointer types - extract and store pointee type information
     if (dataType == DataType::POINTER) {
-        std::string typeStr = node.getType();
-        if (!typeStr.empty() && typeStr[0] == '^') {
-            std::string pointeeTypeName = typeStr.substr(1); // Remove the '^' prefix
-            DataType pointeeType = symbolTable_->resolveDataType(pointeeTypeName);
-            symbol->setPointeeType(pointeeType);
-            symbol->setPointeeTypeName(pointeeTypeName);
+        // First check if this is a user-defined pointer type
+        auto typeSymbol = symbolTable_->lookup(node.getType());
+        if (typeSymbol && typeSymbol->getSymbolType() == SymbolType::TYPE_DEF) {
+            symbol->setPointeeType(typeSymbol->getPointeeType());
+            symbol->setPointeeTypeName(typeSymbol->getPointeeTypeName());
+        } else {
+            // Handle direct pointer syntax like ^Integer
+            std::string typeStr = node.getType();
+            if (!typeStr.empty() && typeStr[0] == '^') {
+                std::string pointeeTypeName = typeStr.substr(1); // Remove the '^' prefix
+                DataType pointeeType = symbolTable_->resolveDataType(pointeeTypeName);
+                symbol->setPointeeType(pointeeType);
+                symbol->setPointeeTypeName(pointeeTypeName);
+            }
         }
     }
     
@@ -922,6 +969,12 @@ bool SemanticAnalyzer::areTypesCompatible(DataType left, DataType right, const s
         return true;
     }
     
+    // Byte is compatible with integer (common in Pascal)
+    if ((left == DataType::BYTE && right == DataType::INTEGER) ||
+        (left == DataType::INTEGER && right == DataType::BYTE)) {
+        return true;
+    }
+    
     return false;
 }
 
@@ -939,8 +992,15 @@ DataType SemanticAnalyzer::getResultType(DataType left, DataType right, TokenTyp
         return DataType::BOOLEAN;
     }
     
-    // Addition can be arithmetic, string concatenation, or set union
+    // Addition can be arithmetic, string concatenation, set union, or pointer arithmetic
     if (operator_ == TokenType::PLUS) {
+        // Pointer arithmetic: pointer + integer = pointer
+        if (left == DataType::POINTER && right == DataType::INTEGER) {
+            return DataType::POINTER;
+        }
+        if (left == DataType::INTEGER && right == DataType::POINTER) {
+            return DataType::POINTER;
+        }
         // Set union
         if (left == DataType::CUSTOM && right == DataType::CUSTOM) {
             return DataType::CUSTOM;
@@ -956,9 +1016,18 @@ DataType SemanticAnalyzer::getResultType(DataType left, DataType right, TokenTyp
         return DataType::INTEGER;
     }
     
-    // Other arithmetic operators or set operations
+    // Other arithmetic operators, set operations, or pointer arithmetic
     if (operator_ == TokenType::MINUS || operator_ == TokenType::MULTIPLY || 
         operator_ == TokenType::DIVIDE) {
+        // Pointer arithmetic: pointer - integer = pointer, pointer - pointer = integer
+        if (operator_ == TokenType::MINUS) {
+            if (left == DataType::POINTER && right == DataType::INTEGER) {
+                return DataType::POINTER;
+            }
+            if (left == DataType::POINTER && right == DataType::POINTER) {
+                return DataType::INTEGER; // difference between pointers
+            }
+        }
         // Set operations
         if (left == DataType::CUSTOM && right == DataType::CUSTOM) {
             return DataType::CUSTOM;
@@ -998,16 +1067,22 @@ bool SemanticAnalyzer::isValidBinaryOperation(DataType leftType, DataType rightT
     
     switch (operator_) {
         case TokenType::PLUS:
-            // Allow numeric addition, string concatenation, and set union
+            // Allow numeric addition, string concatenation, set union, and pointer arithmetic
             return ((leftType == DataType::INTEGER || leftType == DataType::REAL) &&
                     (rightType == DataType::INTEGER || rightType == DataType::REAL)) ||
                    (leftType == DataType::STRING && rightType == DataType::STRING) ||
-                   (leftType == DataType::CUSTOM && rightType == DataType::CUSTOM);
+                   (leftType == DataType::CUSTOM && rightType == DataType::CUSTOM) ||
+                   // Pointer arithmetic: pointer + integer
+                   (leftType == DataType::POINTER && rightType == DataType::INTEGER) ||
+                   (leftType == DataType::INTEGER && rightType == DataType::POINTER);
         case TokenType::MINUS:
-            // Allow numeric subtraction and set difference
+            // Allow numeric subtraction, set difference, and pointer arithmetic
             return ((leftType == DataType::INTEGER || leftType == DataType::REAL) &&
                     (rightType == DataType::INTEGER || rightType == DataType::REAL)) ||
-                   (leftType == DataType::CUSTOM && rightType == DataType::CUSTOM);
+                   (leftType == DataType::CUSTOM && rightType == DataType::CUSTOM) ||
+                   // Pointer arithmetic: pointer - integer or pointer - pointer
+                   (leftType == DataType::POINTER && rightType == DataType::INTEGER) ||
+                   (leftType == DataType::POINTER && rightType == DataType::POINTER);
         case TokenType::MULTIPLY:
             // Allow numeric multiplication and set intersection
             return ((leftType == DataType::INTEGER || leftType == DataType::REAL) &&
@@ -1029,8 +1104,10 @@ bool SemanticAnalyzer::isValidBinaryOperation(DataType leftType, DataType rightT
         case TokenType::LESS_EQUAL:
         case TokenType::GREATER_THAN:
         case TokenType::GREATER_EQUAL:
-            return (leftType == DataType::INTEGER || leftType == DataType::REAL) &&
-                   (rightType == DataType::INTEGER || rightType == DataType::REAL);
+            return ((leftType == DataType::INTEGER || leftType == DataType::REAL) &&
+                    (rightType == DataType::INTEGER || rightType == DataType::REAL)) ||
+                   // Pointer comparisons
+                   (leftType == DataType::POINTER && rightType == DataType::POINTER);
                    
         case TokenType::IN:
             // Set membership: element in set
@@ -1505,6 +1582,9 @@ bool SemanticAnalyzer::isBuiltinFunction(const std::string& functionName) {
            lowerName == "insert" || lowerName == "delete" || lowerName == "assign" ||
            lowerName == "reset" || lowerName == "rewrite" || lowerName == "close" ||
            lowerName == "eof" || lowerName == "new" || lowerName == "dispose" ||
+           // File operations
+           lowerName == "blockread" || lowerName == "blockwrite" || 
+           lowerName == "filepos" || lowerName == "filesize" || lowerName == "seek" ||
            // System unit mathematical functions
            lowerName == "abs" || lowerName == "sqr" || lowerName == "sqrt" ||
            lowerName == "sin" || lowerName == "cos" || lowerName == "arctan" ||
@@ -1512,12 +1592,19 @@ bool SemanticAnalyzer::isBuiltinFunction(const std::string& functionName) {
            // System unit conversion functions  
            lowerName == "val" || lowerName == "str" ||
            // System unit string functions
-           lowerName == "upcase" ||
+           lowerName == "upcase" || lowerName == "trim" || lowerName == "trimleft" ||
+           lowerName == "trimright" || lowerName == "stringofchar" || lowerName == "lowercase" ||
+           lowerName == "uppercase" || lowerName == "leftstr" || lowerName == "rightstr" ||
+           lowerName == "padleft" || lowerName == "padright" ||
            // System unit I/O functions
            lowerName == "paramcount" || lowerName == "paramstr" ||
            // System unit system functions
            lowerName == "halt" || lowerName == "exit" || lowerName == "random" || 
            lowerName == "randomize" ||
+           // Pointer arithmetic functions
+           lowerName == "inc" || lowerName == "dec" ||
+           // Dynamic memory allocation functions
+           lowerName == "getmem" || lowerName == "freemem" || lowerName == "mark" || lowerName == "release" ||
            // CRT unit functions
            lowerName == "clrscr" || lowerName == "clreol" || lowerName == "gotoxy" ||
            lowerName == "wherex" || lowerName == "wherey" || lowerName == "textcolor" ||
@@ -1590,6 +1677,11 @@ void SemanticAnalyzer::handleBuiltinFunction(const std::string& functionName, Ca
         currentExpressionType_ = DataType::CHAR;
     } else if (lowerName == "copy" || lowerName == "concat" || lowerName == "upcase" ||
                lowerName == "str" || lowerName == "paramstr" ||
+               // Additional string functions returning string
+               lowerName == "trim" || lowerName == "trimleft" || lowerName == "trimright" ||
+               lowerName == "stringofchar" || lowerName == "lowercase" || lowerName == "uppercase" ||
+               lowerName == "leftstr" || lowerName == "rightstr" || lowerName == "padleft" ||
+               lowerName == "padright" ||
                // DOS functions returning string
                lowerName == "getcurrentdir" || lowerName == "getenv") {
         currentExpressionType_ = DataType::STRING;
@@ -1603,6 +1695,12 @@ void SemanticAnalyzer::handleBuiltinFunction(const std::string& functionName, Ca
                // DOS functions returning boolean
                lowerName == "fileexists" || lowerName == "directoryexists") {
         currentExpressionType_ = DataType::BOOLEAN;
+    } else if (lowerName == "filepos" || lowerName == "filesize") {
+        // File position functions return integer
+        currentExpressionType_ = DataType::INTEGER;
+    } else if (lowerName == "blockread" || lowerName == "blockwrite" || lowerName == "seek") {
+        // File operations are procedures (void)
+        currentExpressionType_ = DataType::VOID;
     } else {
         currentExpressionType_ = DataType::UNKNOWN;
     }

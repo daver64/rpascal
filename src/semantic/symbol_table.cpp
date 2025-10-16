@@ -214,13 +214,19 @@ DataType SymbolTable::stringToDataType(const std::string& typeStr) {
         return DataType::POINTER;
     }
     
+    // Handle file types: file, file of T
+    if (lowerType == "file" || lowerType.find("file of") == 0) {
+        return DataType::FILE_TYPE;
+    }
+    
     if (lowerType == "integer") return DataType::INTEGER;
     if (lowerType == "real") return DataType::REAL;
     if (lowerType == "boolean") return DataType::BOOLEAN;
     if (lowerType == "char") return DataType::CHAR;
+    if (lowerType == "byte") return DataType::BYTE;
     if (lowerType == "string") return DataType::STRING;
     if (lowerType == "void") return DataType::VOID;
-    if (lowerType == "text" || lowerType == "file") return DataType::FILE_TYPE;
+    if (lowerType == "text") return DataType::FILE_TYPE;
     
     return DataType::UNKNOWN;
 }
@@ -230,6 +236,11 @@ DataType SymbolTable::resolveDataType(const std::string& typeStr) {
     DataType builtinType = stringToDataType(typeStr);
     if (builtinType != DataType::UNKNOWN) {
         return builtinType;
+    }
+    
+    // Check for array types: array[...] of Type
+    if (typeStr.find("array") == 0 && typeStr.find(" of ") != std::string::npos) {
+        return DataType::CUSTOM; // Arrays are treated as custom types
     }
     
     // Check for custom type definitions
@@ -247,6 +258,7 @@ std::string SymbolTable::dataTypeToString(DataType type) {
         case DataType::REAL: return "real";
         case DataType::BOOLEAN: return "boolean";
         case DataType::CHAR: return "char";
+        case DataType::BYTE: return "byte";
         case DataType::STRING: return "string";
         case DataType::VOID: return "void";
         case DataType::CUSTOM: return "custom";
@@ -377,6 +389,36 @@ void SymbolTable::initializeBuiltinSymbols() {
     eofFunc->setReturnType(DataType::BOOLEAN);
     define("eof", eofFunc);
     
+    // File position and block operation functions
+    auto blockreadFunc = std::make_shared<Symbol>("blockread", SymbolType::PROCEDURE, DataType::VOID, 0);
+    blockreadFunc->addParameter("f", DataType::FILE_TYPE); // var parameter
+    blockreadFunc->addParameter("buffer", DataType::POINTER); // var parameter (array)
+    blockreadFunc->addParameter("count", DataType::INTEGER);
+    blockreadFunc->addParameter("result", DataType::INTEGER); // var parameter
+    define("blockread", blockreadFunc);
+    
+    auto blockwriteFunc = std::make_shared<Symbol>("blockwrite", SymbolType::PROCEDURE, DataType::VOID, 0);
+    blockwriteFunc->addParameter("f", DataType::FILE_TYPE); // var parameter
+    blockwriteFunc->addParameter("buffer", DataType::POINTER); // const parameter (array)
+    blockwriteFunc->addParameter("count", DataType::INTEGER);
+    blockwriteFunc->addParameter("result", DataType::INTEGER); // var parameter
+    define("blockwrite", blockwriteFunc);
+    
+    auto fileposFunc = std::make_shared<Symbol>("filepos", SymbolType::FUNCTION, DataType::INTEGER, 0);
+    fileposFunc->addParameter("f", DataType::FILE_TYPE);
+    fileposFunc->setReturnType(DataType::INTEGER);
+    define("filepos", fileposFunc);
+    
+    auto filesizeFunc = std::make_shared<Symbol>("filesize", SymbolType::FUNCTION, DataType::INTEGER, 0);
+    filesizeFunc->addParameter("f", DataType::FILE_TYPE);
+    filesizeFunc->setReturnType(DataType::INTEGER);
+    define("filesize", filesizeFunc);
+    
+    auto seekFunc = std::make_shared<Symbol>("seek", SymbolType::PROCEDURE, DataType::VOID, 0);
+    seekFunc->addParameter("f", DataType::FILE_TYPE); // var parameter
+    seekFunc->addParameter("position", DataType::INTEGER);
+    define("seek", seekFunc);
+    
     // Pointer allocation functions
     auto newFunc = std::make_shared<Symbol>("new", SymbolType::PROCEDURE, DataType::VOID, 0);
     newFunc->addParameter("ptr", DataType::POINTER); // var parameter in reality
@@ -447,6 +489,64 @@ void SymbolTable::initializeBuiltinSymbols() {
     upcaseFunc->setReturnType(DataType::CHAR);
     define("upcase", upcaseFunc);
     
+    // Additional string functions
+    auto trimFunc = std::make_shared<Symbol>("trim", SymbolType::FUNCTION, DataType::STRING, 0);
+    trimFunc->addParameter("str", DataType::STRING);
+    trimFunc->setReturnType(DataType::STRING);
+    define("trim", trimFunc);
+    
+    auto trimleftFunc = std::make_shared<Symbol>("trimleft", SymbolType::FUNCTION, DataType::STRING, 0);
+    trimleftFunc->addParameter("str", DataType::STRING);
+    trimleftFunc->setReturnType(DataType::STRING);
+    define("trimleft", trimleftFunc);
+    
+    auto trimrightFunc = std::make_shared<Symbol>("trimright", SymbolType::FUNCTION, DataType::STRING, 0);
+    trimrightFunc->addParameter("str", DataType::STRING);
+    trimrightFunc->setReturnType(DataType::STRING);
+    define("trimright", trimrightFunc);
+    
+    auto stringofcharFunc = std::make_shared<Symbol>("stringofchar", SymbolType::FUNCTION, DataType::STRING, 0);
+    stringofcharFunc->addParameter("ch", DataType::CHAR);
+    stringofcharFunc->addParameter("count", DataType::INTEGER);
+    stringofcharFunc->setReturnType(DataType::STRING);
+    define("stringofchar", stringofcharFunc);
+    
+    auto lowercaseFunc = std::make_shared<Symbol>("lowercase", SymbolType::FUNCTION, DataType::STRING, 0);
+    lowercaseFunc->addParameter("str", DataType::STRING);
+    lowercaseFunc->setReturnType(DataType::STRING);
+    define("lowercase", lowercaseFunc);
+    
+    auto uppercaseFunc = std::make_shared<Symbol>("uppercase", SymbolType::FUNCTION, DataType::STRING, 0);
+    uppercaseFunc->addParameter("str", DataType::STRING);
+    uppercaseFunc->setReturnType(DataType::STRING);
+    define("uppercase", uppercaseFunc);
+    
+    auto leftstrFunc = std::make_shared<Symbol>("leftstr", SymbolType::FUNCTION, DataType::STRING, 0);
+    leftstrFunc->addParameter("str", DataType::STRING);
+    leftstrFunc->addParameter("count", DataType::INTEGER);
+    leftstrFunc->setReturnType(DataType::STRING);
+    define("leftstr", leftstrFunc);
+    
+    auto rightstrFunc = std::make_shared<Symbol>("rightstr", SymbolType::FUNCTION, DataType::STRING, 0);
+    rightstrFunc->addParameter("str", DataType::STRING);
+    rightstrFunc->addParameter("count", DataType::INTEGER);
+    rightstrFunc->setReturnType(DataType::STRING);
+    define("rightstr", rightstrFunc);
+    
+    auto padleftFunc = std::make_shared<Symbol>("padleft", SymbolType::FUNCTION, DataType::STRING, 0);
+    padleftFunc->addParameter("str", DataType::STRING);
+    padleftFunc->addParameter("totalWidth", DataType::INTEGER);
+    padleftFunc->addParameter("paddingChar", DataType::CHAR); // optional
+    padleftFunc->setReturnType(DataType::STRING);
+    define("padleft", padleftFunc);
+    
+    auto padrightFunc = std::make_shared<Symbol>("padright", SymbolType::FUNCTION, DataType::STRING, 0);
+    padrightFunc->addParameter("str", DataType::STRING);
+    padrightFunc->addParameter("totalWidth", DataType::INTEGER);
+    padrightFunc->addParameter("paddingChar", DataType::CHAR); // optional
+    padrightFunc->setReturnType(DataType::STRING);
+    define("padright", padrightFunc);
+    
     // I/O functions
     auto paramCountFunc = std::make_shared<Symbol>("paramcount", SymbolType::FUNCTION, DataType::INTEGER, 0);
     paramCountFunc->setReturnType(DataType::INTEGER);
@@ -471,6 +571,44 @@ void SymbolTable::initializeBuiltinSymbols() {
     
     auto randomizeFunc = std::make_shared<Symbol>("randomize", SymbolType::PROCEDURE, DataType::VOID, 0);
     define("randomize", randomizeFunc);
+    
+    // === POINTER ARITHMETIC FUNCTIONS ===
+    
+    // Inc procedure - increment a variable
+    auto incFunc = std::make_shared<Symbol>("inc", SymbolType::PROCEDURE, DataType::VOID, 0);
+    incFunc->addParameter("var", DataType::INTEGER); // var parameter - can be integer or pointer
+    incFunc->addParameter("amount", DataType::INTEGER); // optional amount parameter
+    define("inc", incFunc);
+    
+    // Dec procedure - decrement a variable
+    auto decFunc = std::make_shared<Symbol>("dec", SymbolType::PROCEDURE, DataType::VOID, 0);
+    decFunc->addParameter("var", DataType::INTEGER); // var parameter - can be integer or pointer
+    decFunc->addParameter("amount", DataType::INTEGER); // optional amount parameter
+    define("dec", decFunc);
+    
+    // === DYNAMIC MEMORY ALLOCATION FUNCTIONS ===
+    
+    // GetMem procedure - allocate memory
+    auto getmemFunc = std::make_shared<Symbol>("getmem", SymbolType::PROCEDURE, DataType::VOID, 0);
+    getmemFunc->addParameter("ptr", DataType::POINTER); // var parameter
+    getmemFunc->addParameter("size", DataType::INTEGER);
+    define("getmem", getmemFunc);
+    
+    // FreeMem procedure - deallocate memory
+    auto freememFunc = std::make_shared<Symbol>("freemem", SymbolType::PROCEDURE, DataType::VOID, 0);
+    freememFunc->addParameter("ptr", DataType::POINTER); // var parameter
+    freememFunc->addParameter("size", DataType::INTEGER); // optional size parameter
+    define("freemem", freememFunc);
+    
+    // Mark procedure - mark memory allocation point
+    auto markFunc = std::make_shared<Symbol>("mark", SymbolType::PROCEDURE, DataType::VOID, 0);
+    markFunc->addParameter("ptr", DataType::POINTER); // var parameter
+    define("mark", markFunc);
+    
+    // Release procedure - release memory to mark point
+    auto releaseFunc = std::make_shared<Symbol>("release", SymbolType::PROCEDURE, DataType::VOID, 0);
+    releaseFunc->addParameter("ptr", DataType::POINTER);
+    define("release", releaseFunc);
 }
 
 } // namespace rpascal

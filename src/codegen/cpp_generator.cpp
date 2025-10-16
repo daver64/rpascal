@@ -1,5 +1,6 @@
 #include "../include/cpp_generator.h"
 #include <algorithm>
+#include <iostream>
 
 namespace rpascal {
 
@@ -276,6 +277,7 @@ void CppGenerator::visit(ArrayIndexExpression& node) {
     // Check if we have array type information
     auto arrayTypeIt = arrayTypes_.find(arrayTypeName);
     if (arrayTypeIt != arrayTypes_.end()) {
+        // Use stored array type info (for complex multi-dimensional arrays)
         const ArrayTypeInfo& info = arrayTypeIt->second;
         
         if (info.dimensions.size() > 1 && indices.size() == info.dimensions.size()) {
@@ -346,18 +348,45 @@ void CppGenerator::visit(ArrayIndexExpression& node) {
             emit(" - 1]");
         }
     } else {
-        // No type information - use legacy behavior
+        // No type information - parse array bounds from type name
         node.getArray()->accept(*this);
         emit("[");
         
+        int startIndex = 1; // Default to 1-based indexing (Pascal default)
+        
+        // Try to extract start index from array type name like "array[0..2] of Byte"
+        if (!arrayTypeName.empty() && arrayTypeName.find("array[") == 0) {
+            size_t bracketStart = arrayTypeName.find('[');
+            size_t rangePos = arrayTypeName.find("..");
+            if (bracketStart != std::string::npos && rangePos != std::string::npos) {
+                std::string startStr = arrayTypeName.substr(bracketStart + 1, rangePos - bracketStart - 1);
+                try {
+                    startIndex = std::stoi(startStr);
+                } catch (const std::exception&) {
+                    startIndex = 1; // Fallback to 1 if parsing fails
+                }
+            }
+        }
+        
         if (indices.size() == 1) {
-            emit("(");
-            indices[0]->accept(*this);
-            emit(") - 1");
+            if (startIndex == 0) {
+                // 0-based array - no offset needed
+                indices[0]->accept(*this);
+            } else {
+                // N-based array - subtract start index
+                emit("(");
+                indices[0]->accept(*this);
+                emit(") - " + std::to_string(startIndex));
+            }
         } else {
-            // Multi-dimensional but no type info - just use first index
-            indices[0]->accept(*this);
-            emit(" - 1");
+            // Multi-dimensional but no type info - just use first index with offset
+            if (startIndex == 0) {
+                indices[0]->accept(*this);
+            } else {
+                emit("(");
+                indices[0]->accept(*this);
+                emit(") - " + std::to_string(startIndex));
+            }
         }
         
         emit("]");
@@ -594,6 +623,10 @@ void CppGenerator::visit(TypeDefinition& node) {
     // Handle range types  
     else if (definition.find("..") != std::string::npos) {
         generateRangeDefinition(node.getName(), definition);
+    }
+    // Handle pointer types
+    else if (!definition.empty() && definition[0] == '^') {
+        generatePointerDefinition(node.getName(), definition);
     }
     else {
         // For other types, generate a comment for now
@@ -932,6 +965,8 @@ std::string CppGenerator::generateHeaders() {
            "#include <cstdlib>\n"
            "#include <ctime>\n"
            "#include <cctype>\n"
+           "#include <memory>\n"
+           "#include <type_traits>\n"
            "#include <thread>\n"
            "#include <chrono>\n"
            "#include <filesystem>\n"
@@ -1039,6 +1074,35 @@ std::string CppGenerator::mapPascalTypeToCpp(const std::string& pascalType) {
         return mapPascalTypeToCpp(pointeeType) + "*";
     }
     
+    // Handle array types: array[0..9] of Type -> std::array<Type, 10> (must be before subrange check)
+    if (lowerType.find("array") == 0 && lowerType.find(" of ") != std::string::npos) {
+        // Parse array[start..end] of ElementType
+        size_t bracketStart = lowerType.find('[');
+        size_t bracketEnd = lowerType.find(']');
+        size_t ofPos = lowerType.find(" of ");
+        
+        if (bracketStart != std::string::npos && bracketEnd != std::string::npos && ofPos != std::string::npos) {
+            std::string bounds = lowerType.substr(bracketStart + 1, bracketEnd - bracketStart - 1);
+            std::string elementType = lowerType.substr(ofPos + 4);
+            elementType.erase(0, elementType.find_first_not_of(" \t\n\r")); // Trim leading whitespace
+            
+            // Parse the bounds: start..end
+            size_t rangePos = bounds.find("..");
+            if (rangePos != std::string::npos) {
+                std::string startStr = bounds.substr(0, rangePos);
+                std::string endStr = bounds.substr(rangePos + 2);
+                
+                // Convert to integers
+                int start = std::stoi(startStr);
+                int end = std::stoi(endStr);
+                int size = end - start + 1;
+                
+                std::string cppElementType = mapPascalTypeToCpp(elementType);
+                return "std::array<" + cppElementType + ", " + std::to_string(size) + ">";
+            }
+        }
+    }
+    
     // Handle subrange types: 0..9 -> int, 'A'..'Z' -> char
     if (lowerType.find("..") != std::string::npos) {
         // Check if it's a character range 'A'..'Z'
@@ -1054,8 +1118,17 @@ std::string CppGenerator::mapPascalTypeToCpp(const std::string& pascalType) {
     if (lowerType == "real") return "double";
     if (lowerType == "boolean") return "bool";
     if (lowerType == "char") return "char";
+    if (lowerType == "byte") return "uint8_t";
     if (lowerType == "string") return "std::string";
-    if (lowerType == "text" || lowerType == "file") return "PascalFile";
+    if (lowerType == "text") return "PascalFile";
+    if (lowerType == "file") return "PascalFile"; // Untyped file
+    
+    // Handle typed files: file of T
+    if (lowerType.find("file of") == 0) {
+        std::string elementType = lowerType.substr(8); // Skip "file of "
+        elementType.erase(0, elementType.find_first_not_of(" \t\n\r")); // Trim leading whitespace
+        return "PascalTypedFile<" + mapPascalTypeToCpp(elementType) + ">";
+    }
     
     return pascalType; // fallback
 }
@@ -1191,7 +1264,39 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
         emit("std::cout");
         for (const auto& arg : node.getArguments()) {
             emit(" << ");
-            arg->accept(*this);
+            
+            // Check if this is a Byte type that needs casting
+            bool needsCast = false;
+            if (auto identifier = dynamic_cast<IdentifierExpression*>(arg.get())) {
+                if (symbolTable_) {
+                    auto symbol = symbolTable_->lookup(identifier->getName());
+                    if (symbol && symbol->getDataType() == DataType::BYTE) {
+                        needsCast = true;
+                    }
+                }
+            } else if (auto arrayAccess = dynamic_cast<ArrayIndexExpression*>(arg.get())) {
+                // Check if array element type is Byte
+                if (auto arrayIdent = dynamic_cast<IdentifierExpression*>(arrayAccess->getArray())) {
+                    if (symbolTable_) {
+                        auto symbol = symbolTable_->lookup(arrayIdent->getName());
+                        if (symbol && symbol->getDataType() == DataType::CUSTOM) {
+                            // Check if array element type is Byte
+                            std::string typeName = symbol->getTypeName();
+                            if (typeName.find("array") == 0 && typeName.find(" of Byte") != std::string::npos) {
+                                needsCast = true;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (needsCast) {
+                emit("static_cast<int>(");
+                arg->accept(*this);
+                emit(")");
+            } else {
+                arg->accept(*this);
+            }
         }
         emit(" << std::endl");
     } else if (functionName == "readln") {
@@ -1355,11 +1460,12 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
             emit(".eof()");
         }
     } else if (functionName == "new") {
-        // new(ptr) -> ptr = new <type>
-        // For simplicity, we'll generate a basic new for integer pointers
+        // new(ptr) -> ptr = std::make_unique<std::remove_pointer_t<decltype(ptr)>>().release()
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this); // pointer variable
-            emit(" = new int32_t()");
+            emit(" = std::make_unique<std::remove_pointer_t<decltype(");
+            node.getArguments()[0]->accept(*this); // pointer variable
+            emit(")>>().release()");
         }
     } else if (functionName == "dispose") {
         // dispose(ptr) -> delete ptr; ptr = nullptr
@@ -1461,6 +1567,89 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
             node.getArguments()[0]->accept(*this);
         }
         emit("))");
+    } else if (lowerName == "trim") {
+        // trim(str) -> pascal_trim(str)
+        emit("pascal_trim(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "trimleft") {
+        // trimleft(str) -> pascal_trimleft(str)
+        emit("pascal_trimleft(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "trimright") {
+        // trimright(str) -> pascal_trimright(str)
+        emit("pascal_trimright(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "stringofchar") {
+        // stringofchar(ch, count) -> pascal_stringofchar(ch, count)
+        emit("pascal_stringofchar(");
+        for (size_t i = 0; i < node.getArguments().size(); ++i) {
+            if (i > 0) emit(", ");
+            node.getArguments()[i]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "lowercase") {
+        // lowercase(str) -> pascal_lowercase(str)
+        emit("pascal_lowercase(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "uppercase") {
+        // uppercase(str) -> pascal_uppercase(str)
+        emit("pascal_uppercase(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "leftstr") {
+        // leftstr(str, count) -> pascal_leftstr(str, count)
+        emit("pascal_leftstr(");
+        for (size_t i = 0; i < node.getArguments().size(); ++i) {
+            if (i > 0) emit(", ");
+            node.getArguments()[i]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "rightstr") {
+        // rightstr(str, count) -> pascal_rightstr(str, count)
+        emit("pascal_rightstr(");
+        for (size_t i = 0; i < node.getArguments().size(); ++i) {
+            if (i > 0) emit(", ");
+            node.getArguments()[i]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "padleft") {
+        // padleft(str, width, [ch]) -> pascal_padleft(str, width, ch)
+        emit("pascal_padleft(");
+        for (size_t i = 0; i < node.getArguments().size(); ++i) {
+            if (i > 0) emit(", ");
+            node.getArguments()[i]->accept(*this);
+        }
+        // Add default padding character if not provided
+        if (node.getArguments().size() == 2) {
+            emit(", ' '");
+        }
+        emit(")");
+    } else if (lowerName == "padright") {
+        // padright(str, width, [ch]) -> pascal_padright(str, width, ch)
+        emit("pascal_padright(");
+        for (size_t i = 0; i < node.getArguments().size(); ++i) {
+            if (i > 0) emit(", ");
+            node.getArguments()[i]->accept(*this);
+        }
+        // Add default padding character if not provided
+        if (node.getArguments().size() == 2) {
+            emit(", ' '");
+        }
+        emit(")");
     
     // I/O functions
     } else if (functionName == "paramcount") {
@@ -1638,6 +1827,97 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
                lowerName == "getdatetime") {
         // Complex functions that need proper implementation later
         emit("/* " + functionName + " not fully implemented */");
+    } else if (lowerName == "blockread") {
+        // blockread(file, buffer, count, result) -> pascal_blockread(file, buffer, count, result)
+        emit("pascal_blockread(");
+        for (size_t i = 0; i < node.getArguments().size(); ++i) {
+            if (i > 0) emit(", ");
+            node.getArguments()[i]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "blockwrite") {
+        // blockwrite(file, buffer, count, result) -> pascal_blockwrite(file, buffer, count, result)
+        emit("pascal_blockwrite(");
+        for (size_t i = 0; i < node.getArguments().size(); ++i) {
+            if (i > 0) emit(", ");
+            node.getArguments()[i]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "filepos") {
+        // filepos(file) -> pascal_filepos(file)
+        emit("pascal_filepos(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "filesize") {
+        // filesize(file) -> pascal_filesize(file) for typed files
+        // or std::filesystem::file_size for file names
+        if (!node.getArguments().empty()) {
+            // TODO: Detect if argument is a file variable or filename string
+            emit("pascal_filesize(");
+            node.getArguments()[0]->accept(*this);
+            emit(")");
+        }
+    } else if (lowerName == "seek") {
+        // seek(file, position) -> pascal_seek(file, position)
+        emit("pascal_seek(");
+        for (size_t i = 0; i < node.getArguments().size(); ++i) {
+            if (i > 0) emit(", ");
+            node.getArguments()[i]->accept(*this);
+        }
+        emit(")");
+    } else if (lowerName == "inc") {
+        // inc(var [, amount]) -> var += amount (default amount is 1)
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this); // variable
+            emit(" += ");
+            if (node.getArguments().size() > 1) {
+                node.getArguments()[1]->accept(*this); // amount
+            } else {
+                emit("1"); // default increment
+            }
+        }
+    } else if (lowerName == "dec") {
+        // dec(var [, amount]) -> var -= amount (default amount is 1)
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this); // variable
+            emit(" -= ");
+            if (node.getArguments().size() > 1) {
+                node.getArguments()[1]->accept(*this); // amount
+            } else {
+                emit("1"); // default decrement
+            }
+        }
+    } else if (lowerName == "getmem") {
+        // getmem(ptr, size) -> ptr = std::make_unique<uint8_t[]>(size).release()
+        if (node.getArguments().size() >= 2) {
+            node.getArguments()[0]->accept(*this); // pointer variable
+            emit(" = std::make_unique<uint8_t[]>(");
+            node.getArguments()[1]->accept(*this); // size
+            emit(").release()");
+        }
+    } else if (lowerName == "freemem") {
+        // freemem(ptr [, size]) -> delete[] ptr; ptr = nullptr
+        if (!node.getArguments().empty()) {
+            emit("delete[] ");
+            node.getArguments()[0]->accept(*this); // pointer variable
+            emit("; ");
+            node.getArguments()[0]->accept(*this); // pointer variable
+            emit(" = nullptr");
+        }
+    } else if (lowerName == "mark") {
+        // mark(ptr) -> ptr = malloc stack mark (simplified as assignment)
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this); // pointer variable
+            emit(" = reinterpret_cast<void*>(0xDEADBEEF)"); // placeholder mark
+        }
+    } else if (lowerName == "release") {
+        // release(ptr) -> free to mark point (simplified as nullptr assignment)
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this); // pointer variable
+            emit(" = nullptr");
+        }
     } else {
         // Default function call
         emit(functionName + "(");
@@ -1737,17 +2017,27 @@ bool CppGenerator::isBuiltinFunction(const std::string& name) {
            lowerName == "concat" || lowerName == "insert" || lowerName == "delete" ||
            lowerName == "assign" || lowerName == "reset" || lowerName == "rewrite" ||
            lowerName == "close" || lowerName == "eof" || lowerName == "new" || lowerName == "dispose" ||
+           // File operations
+           lowerName == "blockread" || lowerName == "blockwrite" || 
+           lowerName == "filepos" || lowerName == "filesize" || lowerName == "seek" ||
            // System unit mathematical functions
            lowerName == "abs" || lowerName == "sqr" || lowerName == "sqrt" || lowerName == "sin" ||
            lowerName == "cos" || lowerName == "arctan" || lowerName == "ln" || lowerName == "exp" ||
            // System unit conversion functions  
            lowerName == "val" || lowerName == "str" ||
            // System unit string functions
-           lowerName == "upcase" ||
+           lowerName == "upcase" || lowerName == "trim" || lowerName == "trimleft" ||
+           lowerName == "trimright" || lowerName == "stringofchar" || lowerName == "lowercase" ||
+           lowerName == "uppercase" || lowerName == "leftstr" || lowerName == "rightstr" ||
+           lowerName == "padleft" || lowerName == "padright" ||
            // System unit I/O functions
            lowerName == "paramcount" || lowerName == "paramstr" ||
            // System unit system functions
            lowerName == "halt" || lowerName == "exit" || lowerName == "random" || lowerName == "randomize" ||
+           // Pointer arithmetic functions
+           lowerName == "inc" || lowerName == "dec" ||
+           // Dynamic memory allocation functions
+           lowerName == "getmem" || lowerName == "freemem" || lowerName == "mark" || lowerName == "release" ||
            // CRT unit functions
            lowerName == "clrscr" || lowerName == "clreol" || lowerName == "gotoxy" ||
            lowerName == "wherex" || lowerName == "wherey" || lowerName == "textcolor" ||
@@ -2123,6 +2413,30 @@ void CppGenerator::generateBoundedStringDefinition(const std::string& typeName, 
         // Malformed bounded string definition
         emitLine("// Bounded string definition: " + typeName + " = " + definition);
         emitLine("using " + typeName + " = std::string; // TODO: implement proper bounded string");
+    }
+    emitLine("");
+}
+
+void CppGenerator::generatePointerDefinition(const std::string& typeName, const std::string& definition) {
+    // Parse pointer definition: "^integer" -> "using PInteger = int32_t*;"
+    if (!definition.empty() && definition[0] == '^') {
+        std::string pointeeType = definition.substr(1); // Remove the '^' prefix
+        
+        // Trim whitespace
+        size_t start = pointeeType.find_first_not_of(" \t");
+        size_t end = pointeeType.find_last_not_of(" \t");
+        if (start != std::string::npos && end != std::string::npos) {
+            pointeeType = pointeeType.substr(start, end - start + 1);
+        }
+        
+        // Map the pointee type to C++ type
+        std::string cppPointeeType = mapPascalTypeToCpp(pointeeType);
+        
+        emitLine("// Pointer type definition: " + typeName + " = " + definition);
+        emitLine("using " + typeName + " = " + cppPointeeType + "*;");
+    } else {
+        emitLine("// Invalid pointer definition: " + definition);
+        emitLine("using " + typeName + " = void*;");
     }
     emitLine("");
 }

@@ -109,6 +109,7 @@ private:
     std::string mapPascalFunctionToCpp(const std::string& functionName);
     void generateRecordDefinition(const std::string& typeName, const std::string& definition);
     void generateArrayDefinition(const std::string& typeName, const std::string& definition);
+    void generatePointerDefinition(const std::string& typeName, const std::string& definition);
     void generateSetDefinition(const std::string& typeName, const std::string& definition);
     void generateBoundedStringDefinition(const std::string& typeName, const std::string& definition);
     void generateRangeDefinition(const std::string& typeName, const std::string& definition);

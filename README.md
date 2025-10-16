@@ -225,6 +225,93 @@ RPascal prioritizes **practical compatibility** over perfect emulation. We focus
 - **Performance**: Optimized C++ code generation
 - **Maintainability**: Clean, readable generated code for debugging
 
+## 🚧 Areas for Improvement
+
+The following features would bring RPascal closer to 100% TP7 compatibility:
+
+### High Priority (Impact: High, Effort: Medium)
+
+**Advanced I/O & File Operations:**
+- [ ] Complete file type support (`file of T`, untyped files)
+- [ ] Block read/write operations (`blockread`, `blockwrite`)
+- [ ] File position functions (`filepos`, `filesize`, `seek`)
+- [ ] Text file line-by-line operations improvement
+
+**Enhanced String Operations:**
+- [ ] Complete string function library (`trim`, `stringofchar`, etc.)
+- [ ] Pascal-style string formatting improvements
+- [ ] Better string[N] bounds checking and operations
+
+**Memory & Pointer Enhancements:**
+- [ ] Complete pointer arithmetic support
+- [ ] Dynamic array allocation (`getmem`, `freemem`)
+- [ ] Better nil pointer handling and validation
+
+### Medium Priority (Impact: Medium, Effort: Low-Medium)
+
+**Language Edge Cases:**
+- [ ] Nested constant expressions in array bounds
+- [ ] Complex variant record case handling
+- [ ] Set operations with custom ranges and types
+- [ ] Forward type declarations and circular references
+
+**Error Handling & Debugging:**
+- [ ] Runtime error numbers matching TP7 exactly
+- [ ] Better error location reporting in complex expressions
+- [ ] Stack trace information for debugging
+- [ ] Warning system for potential compatibility issues
+
+**Built-in Function Completeness:**
+- [ ] Mathematical functions (`frac`, `int`, `pi`, etc.)
+- [ ] Advanced string functions (`soundex`, pattern matching)
+- [ ] Date/time functions (`now`, `date`, `time`, `formatdatetime`)
+- [ ] System information functions (`diskfree`, `disksize`)
+
+### Low Priority (Impact: Low, Effort: Varies)
+
+**Advanced Language Features:**
+- [ ] Absolute variables (`var x: integer absolute $0040:$0017;`)
+- [ ] Interrupt procedures (`procedure handler; interrupt;`)
+- [ ] Far/near pointer distinctions (for compatibility only)
+- [ ] Complete directive support (`$R+`, `$I+`, etc.)
+
+**Optimization & Performance:**
+- [ ] Dead code elimination in generated C++
+- [ ] Constant folding and expression optimization
+- [ ] Better C++ code formatting and readability
+- [ ] Compile-time array bounds checking elimination
+
+**Platform-Specific Compatibility:**
+- [ ] DOS-style path handling options
+- [ ] Case-insensitive file operations (Windows compatibility)
+- [ ] Better line ending handling across platforms
+- [ ] Legacy character encoding support
+
+### Nice-to-Have (Enhancement Beyond TP7)
+
+**Modern Development Features:**
+- [ ] Unicode string support as alternative to ANSI
+- [ ] JSON/XML parsing built-in functions
+- [ ] Regular expression support
+- [ ] Modern cryptography functions
+- [ ] Network programming primitives
+
+**Developer Experience:**
+- [ ] IDE integration (VS Code extension)
+- [ ] Syntax highlighting and IntelliSense
+- [ ] Interactive debugging support
+- [ ] Package manager for Pascal libraries
+
+**Code Generation Improvements:**
+- [ ] Multiple target languages (JavaScript, WASM, etc.)
+- [ ] Better C++ template usage for type safety
+- [ ] Automatic memory leak detection
+- [ ] Performance profiling integration
+
+---
+
+**Contributing**: We welcome contributions for any of these improvements! Check our [issues](https://github.com/daver64/rpascal/issues) page or open a new issue to discuss implementation approaches.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.

@@ -973,7 +973,7 @@ std::string Parser::parseTypeName() {
     if (check(TokenType::IDENTIFIER) || 
         check(TokenType::INTEGER) || check(TokenType::REAL) || 
         check(TokenType::BOOLEAN) || check(TokenType::CHAR) ||
-        check(TokenType::TEXT) || check(TokenType::FILE)) {
+        check(TokenType::BYTE) || check(TokenType::TEXT) || check(TokenType::FILE)) {
         Token typeToken = currentToken_;
         advance();
         return typeToken.getValue();
@@ -998,6 +998,36 @@ std::string Parser::parseTypeName() {
             // Unbounded string
             return "string";
         }
+    } else if (check(TokenType::ARRAY)) {
+        // Array type: array[1..5] of integer
+        advance(); // consume 'array'
+        std::string arrayDef = "array";
+        
+        if (check(TokenType::LEFT_BRACKET)) {
+            advance(); // consume '['
+            arrayDef += "[";
+            
+            // Parse array bounds - preserve token format for proper parsing
+            while (!check(TokenType::RIGHT_BRACKET) && !isAtEnd()) {
+                if (currentToken_.getType() == TokenType::CHAR_LITERAL) {
+                    arrayDef += "'" + currentToken_.getValue() + "'";
+                } else {
+                    arrayDef += currentToken_.getValue();
+                }
+                advance();
+            }
+            
+            consume(TokenType::RIGHT_BRACKET, "Expected ']' after array bounds");
+            arrayDef += "]";
+        }
+        
+        consume(TokenType::OF, "Expected 'of' after array bounds");
+        arrayDef += " of ";
+        
+        std::string elementType = parseTypeName();
+        arrayDef += elementType;
+        
+        return arrayDef;
     }
     
     addError("Expected type name");
@@ -1051,6 +1081,18 @@ std::string Parser::parseTypeDefinition() {
         
         std::string elementType = parseTypeName();
         return "set of " + elementType;
+    } else if (check(TokenType::FILE)) {
+        // File type: file of T or untyped file
+        advance(); // consume 'file'
+        
+        if (check(TokenType::OF)) {
+            advance(); // consume 'of'
+            std::string elementType = parseTypeName();
+            return "file of " + elementType;
+        } else {
+            // Untyped file
+            return "file";
+        }
     } else if (check(TokenType::RECORD)) {
         // Record type: record ... end
         advance(); // consume 'record'

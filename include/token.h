@@ -55,6 +55,7 @@ enum class TokenType {
     REAL,
     BOOLEAN,
     CHAR,
+    BYTE,
     STRING,
     
     // Boolean literals

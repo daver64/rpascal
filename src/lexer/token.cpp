@@ -45,6 +45,7 @@ const std::unordered_map<std::string, TokenType> Keywords::keywords_ = {
     {"real", TokenType::REAL},
     {"boolean", TokenType::BOOLEAN},
     {"char", TokenType::CHAR},
+    {"byte", TokenType::BYTE},
     {"string", TokenType::STRING},
     {"true", TokenType::TRUE},
     {"false", TokenType::FALSE},
@@ -133,6 +134,7 @@ std::string Token::tokenTypeToString(TokenType type) {
         case TokenType::REAL: return "REAL";
         case TokenType::BOOLEAN: return "BOOLEAN";
         case TokenType::CHAR: return "CHAR";
+        case TokenType::BYTE: return "BYTE";
         case TokenType::STRING: return "STRING";
         case TokenType::TRUE: return "TRUE";
         case TokenType::FALSE: return "FALSE";

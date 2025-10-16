@@ -23,6 +23,7 @@ enum class DataType {
     REAL,
     BOOLEAN,
     CHAR,
+    BYTE,
     STRING,
     VOID,
     CUSTOM,    // User-defined types (records, arrays, enums)
