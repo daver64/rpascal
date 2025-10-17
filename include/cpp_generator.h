@@ -121,6 +121,17 @@ private:
     void generateFunctionCall(CallExpression& node);
     void generateBuiltinCall(CallExpression& node, const std::string& functionName);
     
+    // Built-in function helper methods (organized by category)
+    bool generateBasicIOCall(CallExpression& node, const std::string& lowerName);
+    bool generateMathFunctionCall(CallExpression& node, const std::string& lowerName);
+    bool generateStringFunctionCall(CallExpression& node, const std::string& lowerName);
+    bool generateConversionFunctionCall(CallExpression& node, const std::string& lowerName);
+    bool generateCharacterFunctionCall(CallExpression& node, const std::string& lowerName);
+    bool generateDateTimeFunctionCall(CallExpression& node, const std::string& lowerName);
+    bool generateSystemFunctionCall(CallExpression& node, const std::string& lowerName);
+    bool generateMemoryFunctionCall(CallExpression& node, const std::string& lowerName);
+    bool generateFileFunctionCall(CallExpression& node, const std::string& lowerName);
+    
     // Variable and function management
     std::string generateVariableDeclaration(const std::string& name, const std::string& type, Expression* initializer = nullptr);
     std::string generateParameterList(const std::vector<std::unique_ptr<VariableDeclaration>>& parameters);

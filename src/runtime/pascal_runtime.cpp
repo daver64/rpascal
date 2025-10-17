@@ -2,6 +2,10 @@
 #include <ios>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <cstdio>
+#include <vector>
+#include <stdexcept>
 
 namespace rpascal {
 
@@ -122,6 +126,98 @@ std::string pascal_padright(const std::string& str, int totalWidth, char padding
     return str + std::string(static_cast<size_t>(padCount), paddingChar);
 }
 
-// Placeholder implementation
+// Mathematical functions
+double pascal_power(double base, double exponent) {
+    return std::pow(base, exponent);
+}
+
+int pascal_round(double value) {
+    return static_cast<int>(std::round(value));
+}
+
+int pascal_trunc(double value) {
+    return static_cast<int>(std::trunc(value));
+}
+
+// String conversion functions
+std::string pascal_inttostr(int value) {
+    return std::to_string(value);
+}
+
+std::string pascal_floattostr(double value) {
+    return std::to_string(value);
+}
+
+int pascal_strtoint(const std::string& str) {
+    try {
+        return std::stoi(str);
+    } catch (const std::exception&) {
+        return 0; // Pascal behavior on invalid conversion
+    }
+}
+
+double pascal_strtofloat(const std::string& str) {
+    try {
+        return std::stod(str);
+    } catch (const std::exception&) {
+        return 0.0; // Pascal behavior on invalid conversion
+    }
+}
+
+// Format function (simplified implementation)
+std::string pascal_format(const std::string& format, const std::vector<std::string>& args) {
+    std::string result = format;
+    size_t argIndex = 0;
+    
+    // Simple placeholder replacement for %s, %d, %f
+    size_t pos = 0;
+    while ((pos = result.find('%', pos)) != std::string::npos && argIndex < args.size()) {
+        if (pos + 1 < result.length()) {
+            char specifier = result[pos + 1];
+            if (specifier == 's' || specifier == 'd' || specifier == 'f') {
+                result.replace(pos, 2, args[argIndex++]);
+            } else {
+                pos++;
+            }
+        } else {
+            break;
+        }
+    }
+    
+    return result;
+}
+
+// Date/time functions (simplified)
+int pascal_dayofweek(int year, int month, int day) {
+    // Simplified day of week calculation (Zeller's congruence)
+    if (month < 3) {
+        month += 12;
+        year--;
+    }
+    
+    int k = year % 100;
+    int j = year / 100;
+    
+    int h = (day + (13 * (month + 1)) / 5 + k + k / 4 + j / 4 - 2 * j) % 7;
+    
+    // Convert to Pascal day of week (1=Sunday, 2=Monday, etc.)
+    return ((h + 5) % 7) + 1;
+}
+
+std::string pascal_datetostr(int year, int month, int day) {
+    char buffer[11]; // "MM/DD/YYYY"
+    std::snprintf(buffer, sizeof(buffer), "%02d/%02d/%04d", month, day, year);
+    return std::string(buffer);
+}
+
+std::string pascal_timetostr(int hour, int minute, int second) {
+    char buffer[9]; // "HH:MM:SS"
+    std::snprintf(buffer, sizeof(buffer), "%02d:%02d:%02d", hour, minute, second);
+    return std::string(buffer);
+}
+
+// Global variables for command-line arguments
+int pascal_argc = 0;
+char** pascal_argv = nullptr;
 
 } // namespace rpascal

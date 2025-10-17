@@ -1240,32 +1240,35 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
     std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), 
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     
+    // Delegate to category-specific helper methods
+    if (generateBasicIOCall(node, lowerName)) return;
+    if (generateMathFunctionCall(node, lowerName)) return;
+    if (generateStringFunctionCall(node, lowerName)) return;
+    if (generateConversionFunctionCall(node, lowerName)) return;
+    if (generateCharacterFunctionCall(node, lowerName)) return;
+    if (generateDateTimeFunctionCall(node, lowerName)) return;
+    if (generateSystemFunctionCall(node, lowerName)) return;
+    if (generateMemoryFunctionCall(node, lowerName)) return;
+    if (generateFileFunctionCall(node, lowerName)) return;
+    
+    // Default function call for unrecognized functions
+    emit(functionName + "(");
+    for (size_t i = 0; i < node.getArguments().size(); ++i) {
+        if (i > 0) emit(", ");
+        node.getArguments()[i]->accept(*this);
+    }
+    emit(")");
+}
+
+// Helper method implementations
+
+bool CppGenerator::generateBasicIOCall(CallExpression& node, const std::string& lowerName) {
     if (lowerName == "writeln") {
-        // Check if first argument is a file variable
-        if (!node.getArguments().empty()) {
-            // Check if the first argument looks like a file (simple heuristic)
-            auto firstArg = dynamic_cast<IdentifierExpression*>(node.getArguments()[0].get());
-            if (firstArg && (firstArg->getName() == "f" || 
-                           firstArg->getName().find("file") != std::string::npos ||
-                           firstArg->getName().find("File") != std::string::npos)) {
-                // File output: writeln(f, args...) -> f.getStream() << args... << std::endl
-                node.getArguments()[0]->accept(*this);
-                emit(".getStream()");
-                for (size_t i = 1; i < node.getArguments().size(); ++i) {
-                    emit(" << ");
-                    node.getArguments()[i]->accept(*this);
-                }
-                emit(" << std::endl");
-                return;
-            }
-        }
-        
-        // Console output: writeln(args...) -> std::cout << args... << std::endl
         emit("std::cout");
         for (const auto& arg : node.getArguments()) {
             emit(" << ");
             
-            // Check if this is a Byte type that needs casting
+            // Check if this is a Byte type that needs casting for proper display
             bool needsCast = false;
             if (auto identifier = dynamic_cast<IdentifierExpression*>(arg.get())) {
                 if (symbolTable_) {
@@ -1279,11 +1282,37 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
                 if (auto arrayIdent = dynamic_cast<IdentifierExpression*>(arrayAccess->getArray())) {
                     if (symbolTable_) {
                         auto symbol = symbolTable_->lookup(arrayIdent->getName());
-                        if (symbol && symbol->getDataType() == DataType::CUSTOM) {
-                            // Check if array element type is Byte
-                            std::string typeName = symbol->getTypeName();
-                            if (typeName.find("array") == 0 && typeName.find(" of Byte") != std::string::npos) {
-                                needsCast = true;
+                        if (symbol) {
+                            // Check for named types in arrayTypes_ (for custom types)
+                            if (symbol->getDataType() == DataType::CUSTOM) {
+                                std::string typeName = symbol->getTypeName();
+                                auto arrayTypeIt = arrayTypes_.find(typeName);
+                                if (arrayTypeIt != arrayTypes_.end()) {
+                                    const ArrayTypeInfo& info = arrayTypeIt->second;
+                                    std::string lowerElementType = info.elementType;
+                                    std::transform(lowerElementType.begin(), lowerElementType.end(), lowerElementType.begin(), 
+                                                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                                    if (lowerElementType == "byte") {
+                                        needsCast = true;
+                                    }
+                                } else {
+                                    // For inline arrays, check the type name directly for "of byte"
+                                    std::string lowerTypeName = typeName;
+                                    std::transform(lowerTypeName.begin(), lowerTypeName.end(), lowerTypeName.begin(), 
+                                                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                                    if (lowerTypeName.find("of byte") != std::string::npos) {
+                                        needsCast = true;
+                                    }
+                                }
+                            } else {
+                                // Check any symbol with uint8_t in type name (handles inline arrays with different DataType)
+                                std::string typeName = symbol->getTypeName();
+                                std::string lowerTypeName = typeName;
+                                std::transform(lowerTypeName.begin(), lowerTypeName.end(), lowerTypeName.begin(), 
+                                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                                if (lowerTypeName.find("uint8_t") != std::string::npos) {
+                                    needsCast = true;
+                                }
                             }
                         }
                     }
@@ -1299,196 +1328,70 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
             }
         }
         emit(" << std::endl");
-    } else if (functionName == "readln") {
-        // Check if first argument is a file variable
-        if (!node.getArguments().empty()) {
-            auto firstArg = dynamic_cast<IdentifierExpression*>(node.getArguments()[0].get());
-            if (firstArg && (firstArg->getName() == "f" || 
-                           firstArg->getName().find("file") != std::string::npos ||
-                           firstArg->getName().find("File") != std::string::npos)) {
-                // File input: readln(f, var) -> f.getStream() >> var
-                node.getArguments()[0]->accept(*this);
-                emit(".getStream()");
-                for (size_t i = 1; i < node.getArguments().size(); ++i) {
-                    emit(" >> ");
-                    node.getArguments()[i]->accept(*this);
-                }
-                return;
-            }
-        }
-        
-        // Console input: readln(var) -> std::cin >> var
+        return true;
+    } else if (lowerName == "readln") {
         emit("std::cin");
         for (const auto& arg : node.getArguments()) {
             emit(" >> ");
-            arg->accept(*this);
-        }
-    } else if (functionName == "read") {
-        // read(f, var) -> f.getStream() >> var
-        if (node.getArguments().size() >= 2) {
-            // Check if first argument is a file variable
-            auto firstArg = dynamic_cast<IdentifierExpression*>(node.getArguments()[0].get());
-            if (firstArg && (firstArg->getName() == "f" || 
-                           firstArg->getName().find("file") != std::string::npos ||
-                           firstArg->getName().find("File") != std::string::npos)) {
-                // File input: read(f, var) -> f.getStream() >> var
-                node.getArguments()[0]->accept(*this);
-                emit(".getStream()");
-                for (size_t i = 1; i < node.getArguments().size(); ++i) {
-                    emit(" >> ");
-                    node.getArguments()[i]->accept(*this);
+            
+            // Check if this is a Byte type that needs casting for proper input
+            bool needsCast = false;
+            if (auto identifier = dynamic_cast<IdentifierExpression*>(arg.get())) {
+                if (symbolTable_) {
+                    auto symbol = symbolTable_->lookup(identifier->getName());
+                    if (symbol && symbol->getDataType() == DataType::BYTE) {
+                        needsCast = true;
+                    }
                 }
-                return;
+            }
+            
+            if (needsCast) {
+                emit("reinterpret_cast<int&>(");
+                arg->accept(*this);
+                emit(")");
+            } else {
+                arg->accept(*this);
             }
         }
-        
-        // Console input: read(var) -> std::cin >> var
+        return true;
+    } else if (lowerName == "read") {
         emit("std::cin");
         for (const auto& arg : node.getArguments()) {
             emit(" >> ");
-            arg->accept(*this);
+            
+            // Check if this is a Byte type that needs casting for proper input
+            bool needsCast = false;
+            if (auto identifier = dynamic_cast<IdentifierExpression*>(arg.get())) {
+                if (symbolTable_) {
+                    auto symbol = symbolTable_->lookup(identifier->getName());
+                    if (symbol && symbol->getDataType() == DataType::BYTE) {
+                        needsCast = true;
+                    }
+                }
+            }
+            
+            if (needsCast) {
+                emit("reinterpret_cast<int&>(");
+                arg->accept(*this);
+                emit(")");
+            } else {
+                arg->accept(*this);
+            }
         }
-    } else if (functionName == "length") {
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-            emit(".length()");
-        }
-    } else if (functionName == "chr") {
-        emit("static_cast<char>(");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit(")");
-    } else if (lowerName == "ord") {
-        emit("static_cast<int>(");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit(")");
-    } else if (functionName == "pos") {
-        // pos(substr, str) -> str.find(substr) + 1 (Pascal is 1-indexed)
-        emit("(");
-        if (node.getArguments().size() >= 2) {
-            node.getArguments()[1]->accept(*this); // str
-            emit(".find(");
-            node.getArguments()[0]->accept(*this); // substr
-            emit(") != std::string::npos ? ");
-            node.getArguments()[1]->accept(*this); // str
-            emit(".find(");
-            node.getArguments()[0]->accept(*this); // substr
-            emit(") + 1 : 0)");
-        }
-    } else if (functionName == "copy") {
-        // copy(str, start, length) -> str.substr(start-1, length)
-        emit("(");
-        if (node.getArguments().size() >= 3) {
-            node.getArguments()[0]->accept(*this); // str
-            emit(".substr(");
-            node.getArguments()[1]->accept(*this); // start
-            emit(" - 1, ");
-            node.getArguments()[2]->accept(*this); // length
-            emit(")");
-        } else if (node.getArguments().size() >= 2) {
-            node.getArguments()[0]->accept(*this); // str
-            emit(".substr(");
-            node.getArguments()[1]->accept(*this); // start
-            emit(" - 1)");
-        }
-        emit(")");
-    } else if (functionName == "concat") {
-        // concat(str1, str2, ...) -> std::string(str1) + str2 + ...
-        emit("(");
-        for (size_t i = 0; i < node.getArguments().size(); ++i) {
-            if (i > 0) emit(" + ");
-            if (i == 0) emit("std::string("); // Wrap first argument
-            node.getArguments()[i]->accept(*this);
-            if (i == 0) emit(")"); // Close wrapper for first argument
-        }
-        emit(")");
-    } else if (functionName == "insert") {
-        // insert(substr, str, pos) - Pascal modifies string in place
-        // Generate: str.insert(pos-1, substr)
-        if (node.getArguments().size() >= 3) {
-            node.getArguments()[1]->accept(*this); // str
-            emit(".insert(");
-            node.getArguments()[2]->accept(*this); // pos
-            emit(" - 1, ");
-            node.getArguments()[0]->accept(*this); // substr
-            emit(")");
-        }
-    } else if (functionName == "delete") {
-        // delete(str, pos, length) - Pascal modifies string in place
-        // Generate: str.erase(pos-1, length)
-        if (node.getArguments().size() >= 3) {
-            node.getArguments()[0]->accept(*this); // str
-            emit(".erase(");
-            node.getArguments()[1]->accept(*this); // pos
-            emit(" - 1, ");
-            node.getArguments()[2]->accept(*this); // length
-            emit(")");
-        };
-    } else if (functionName == "assign") {
-        // assign(f, filename) -> f.assign(filename)
-        if (node.getArguments().size() >= 2) {
-            node.getArguments()[0]->accept(*this); // file variable
-            emit(".assign(");
-            node.getArguments()[1]->accept(*this); // filename
-            emit(")");
-        }
-    } else if (functionName == "reset") {
-        // reset(f) -> f.reset()
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this); // file variable
-            emit(".reset()");
-        }
-    } else if (functionName == "rewrite") {
-        // rewrite(f) -> f.rewrite()
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this); // file variable
-            emit(".rewrite()");
-        }
-    } else if (functionName == "close") {
-        // close(f) -> f.close()
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this); // file variable
-            emit(".close()");
-        }
-    } else if (functionName == "eof") {
-        // eof(f) -> f.eof()
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this); // file variable
-            emit(".eof()");
-        }
-    } else if (functionName == "new") {
-        // new(ptr) -> ptr = std::make_unique<std::remove_pointer_t<decltype(ptr)>>().release()
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this); // pointer variable
-            emit(" = std::make_unique<std::remove_pointer_t<decltype(");
-            node.getArguments()[0]->accept(*this); // pointer variable
-            emit(")>>().release()");
-        }
-    } else if (functionName == "dispose") {
-        // dispose(ptr) -> delete ptr; ptr = nullptr
-        if (!node.getArguments().empty()) {
-            emit("delete ");
-            node.getArguments()[0]->accept(*this); // pointer variable
-            emit("; ");
-            node.getArguments()[0]->accept(*this); // pointer variable
-            emit(" = nullptr");
-        }
-    
-    // === SYSTEM UNIT FUNCTIONS ===
-    
-    // Mathematical functions
-    } else if (functionName == "abs") {
-        // abs(x) -> std::abs(x)
+        return true;
+    }
+    return false;
+}
+
+bool CppGenerator::generateMathFunctionCall(CallExpression& node, const std::string& lowerName) {
+    if (lowerName == "abs") {
         emit("std::abs(");
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this);
         }
         emit(")");
-    } else if (functionName == "sqr") {
-        // sqr(x) -> (x * x)
+        return true;
+    } else if (lowerName == "sqr") {
         emit("(");
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this);
@@ -1496,176 +1399,253 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
             node.getArguments()[0]->accept(*this);
         }
         emit(")");
-    } else if (functionName == "sqrt") {
-        // sqrt(x) -> std::sqrt(x)
+        return true;
+    } else if (lowerName == "sqrt") {
         emit("std::sqrt(");
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this);
         }
         emit(")");
-    } else if (functionName == "sin") {
-        // sin(x) -> std::sin(x)
+        return true;
+    } else if (lowerName == "sin") {
         emit("std::sin(");
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this);
         }
         emit(")");
-    } else if (functionName == "cos") {
-        // cos(x) -> std::cos(x)
+        return true;
+    } else if (lowerName == "cos") {
         emit("std::cos(");
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this);
         }
         emit(")");
-    } else if (functionName == "arctan") {
-        // arctan(x) -> std::atan(x)
+        return true;
+    } else if (lowerName == "tan") {
+        emit("std::tan(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "arctan") {
         emit("std::atan(");
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this);
         }
         emit(")");
-    } else if (functionName == "ln") {
-        // ln(x) -> std::log(x)
+        return true;
+    } else if (lowerName == "ln") {
         emit("std::log(");
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this);
         }
         emit(")");
-    } else if (functionName == "exp") {
-        // exp(x) -> std::exp(x)
+        return true;
+    } else if (lowerName == "exp") {
         emit("std::exp(");
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this);
         }
         emit(")");
-    
-    // Conversion functions
-    } else if (functionName == "val") {
-        // val(s, result, code) -> Custom implementation needed
-        // For now, generate a simple conversion
+        return true;
+    } else if (lowerName == "power") {
+        emit("std::pow(");
         if (node.getArguments().size() >= 2) {
-            emit("/* val not fully implemented */ ");
-            node.getArguments()[1]->accept(*this); // result variable
-            emit(" = std::stoi(");
-            node.getArguments()[0]->accept(*this); // string
-            emit(")");
+            node.getArguments()[0]->accept(*this);
+            emit(", ");
+            node.getArguments()[1]->accept(*this);
         }
-    } else if (functionName == "str") {
-        // str(x, s) -> s = std::to_string(x)
+        emit(")");
+        return true;
+    } else if (lowerName == "round") {
+        emit("static_cast<int>(std::round(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit("))");
+        return true;
+    } else if (lowerName == "trunc") {
+        emit("static_cast<int>(std::trunc(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit("))");
+        return true;
+    }
+    return false;
+}
+
+bool CppGenerator::generateStringFunctionCall(CallExpression& node, const std::string& lowerName) {
+    if (lowerName == "length") {
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+            emit(".length()");
+        }
+        return true;
+    } else if (lowerName == "pos") {
+        emit("(");
         if (node.getArguments().size() >= 2) {
-            node.getArguments()[1]->accept(*this); // string variable
+            node.getArguments()[1]->accept(*this);
+            emit(".find(");
+            node.getArguments()[0]->accept(*this);
+            emit(") != std::string::npos ? ");
+            node.getArguments()[1]->accept(*this);
+            emit(".find(");
+            node.getArguments()[0]->accept(*this);
+            emit(") + 1 : 0)");
+        }
+        return true;
+    } else if (lowerName == "copy") {
+        emit("(");
+        if (node.getArguments().size() >= 3) {
+            node.getArguments()[0]->accept(*this);
+            emit(".substr(");
+            node.getArguments()[1]->accept(*this);
+            emit(" - 1, ");
+            node.getArguments()[2]->accept(*this);
+            emit(")");
+        } else if (node.getArguments().size() >= 2) {
+            node.getArguments()[0]->accept(*this);
+            emit(".substr(");
+            node.getArguments()[1]->accept(*this);
+            emit(" - 1)");
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "concat") {
+        emit("(");
+        for (size_t i = 0; i < node.getArguments().size(); ++i) {
+            if (i > 0) emit(" + ");
+            if (i == 0) emit("std::string(");
+            node.getArguments()[i]->accept(*this);
+            if (i == 0) emit(")");
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "trim") {
+        emit("[](std::string s) { s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) { return !std::isspace(ch); })); s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end()); return s; }(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "lowercase") {
+        emit("[](std::string s) { std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); }); return s; }(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "uppercase") {
+        emit("[](std::string s) { std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::toupper(c); }); return s; }(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+        return true;
+    }
+    return false;
+}
+
+bool CppGenerator::generateConversionFunctionCall(CallExpression& node, const std::string& lowerName) {
+    if (lowerName == "inttostr") {
+        emit("std::to_string(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "floattostr") {
+        emit("std::to_string(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "strtoint") {
+        emit("std::stoi(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "strtofloat") {
+        emit("std::stod(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "str") {
+        if (node.getArguments().size() >= 2) {
+            node.getArguments()[1]->accept(*this);
             emit(" = std::to_string(");
-            node.getArguments()[0]->accept(*this); // value
+            node.getArguments()[0]->accept(*this);
             emit(")");
         }
-    
-    // String functions
-    } else if (functionName == "upcase") {
-        // upcase(c) -> static_cast<char>(std::toupper(c))
+        return true;
+    }
+    return false;
+}
+
+bool CppGenerator::generateCharacterFunctionCall(CallExpression& node, const std::string& lowerName) {
+    if (lowerName == "chr") {
+        emit("static_cast<char>(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "ord") {
+        emit("static_cast<int>(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "upcase") {
         emit("static_cast<char>(std::toupper(");
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this);
         }
         emit("))");
-    } else if (lowerName == "trim") {
-        // trim(str) -> pascal_trim(str)
-        emit("pascal_trim(");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit(")");
-    } else if (lowerName == "trimleft") {
-        // trimleft(str) -> pascal_trimleft(str)
-        emit("pascal_trimleft(");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit(")");
-    } else if (lowerName == "trimright") {
-        // trimright(str) -> pascal_trimright(str)
-        emit("pascal_trimright(");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit(")");
-    } else if (lowerName == "stringofchar") {
-        // stringofchar(ch, count) -> pascal_stringofchar(ch, count)
-        emit("pascal_stringofchar(");
+        return true;
+    }
+    return false;
+}
+
+bool CppGenerator::generateDateTimeFunctionCall(CallExpression& node, const std::string& lowerName) {
+    if (lowerName == "dayofweek") {
+        emit("pascal_dayofweek(");
         for (size_t i = 0; i < node.getArguments().size(); ++i) {
             if (i > 0) emit(", ");
             node.getArguments()[i]->accept(*this);
         }
         emit(")");
-    } else if (lowerName == "lowercase") {
-        // lowercase(str) -> pascal_lowercase(str)
-        emit("pascal_lowercase(");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit(")");
-    } else if (lowerName == "uppercase") {
-        // uppercase(str) -> pascal_uppercase(str)
-        emit("pascal_uppercase(");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit(")");
-    } else if (lowerName == "leftstr") {
-        // leftstr(str, count) -> pascal_leftstr(str, count)
-        emit("pascal_leftstr(");
+        return true;
+    } else if (lowerName == "datetostr") {
+        emit("pascal_datetostr(");
         for (size_t i = 0; i < node.getArguments().size(); ++i) {
             if (i > 0) emit(", ");
             node.getArguments()[i]->accept(*this);
         }
         emit(")");
-    } else if (lowerName == "rightstr") {
-        // rightstr(str, count) -> pascal_rightstr(str, count)
-        emit("pascal_rightstr(");
+        return true;
+    } else if (lowerName == "timetostr") {
+        emit("pascal_timetostr(");
         for (size_t i = 0; i < node.getArguments().size(); ++i) {
             if (i > 0) emit(", ");
             node.getArguments()[i]->accept(*this);
         }
         emit(")");
-    } else if (lowerName == "padleft") {
-        // padleft(str, width, [ch]) -> pascal_padleft(str, width, ch)
-        emit("pascal_padleft(");
-        for (size_t i = 0; i < node.getArguments().size(); ++i) {
-            if (i > 0) emit(", ");
-            node.getArguments()[i]->accept(*this);
-        }
-        // Add default padding character if not provided
-        if (node.getArguments().size() == 2) {
-            emit(", ' '");
-        }
-        emit(")");
-    } else if (lowerName == "padright") {
-        // padright(str, width, [ch]) -> pascal_padright(str, width, ch)
-        emit("pascal_padright(");
-        for (size_t i = 0; i < node.getArguments().size(); ++i) {
-            if (i > 0) emit(", ");
-            node.getArguments()[i]->accept(*this);
-        }
-        // Add default padding character if not provided
-        if (node.getArguments().size() == 2) {
-            emit(", ' '");
-        }
-        emit(")");
-    
-    // I/O functions
-    } else if (functionName == "paramcount") {
-        // paramcount -> (argc - 1) // assuming global argc available
-        emit("(pascal_argc - 1)");
-    } else if (functionName == "paramstr") {
-        // paramstr(i) -> pascal_argv[i] // assuming global argv available
-        emit("std::string(pascal_argv[");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit("])");
-    
-    // System functions
-    } else if (functionName == "halt") {
-        // halt(code) -> std::exit(code)
+        return true;
+    }
+    return false;
+}
+
+bool CppGenerator::generateSystemFunctionCall(CallExpression& node, const std::string& lowerName) {
+    if (lowerName == "halt") {
         emit("std::exit(");
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this);
@@ -1673,260 +1653,104 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
             emit("0");
         }
         emit(")");
-    } else if (functionName == "exit") {
-        // exit -> return (from current function)
+        return true;
+    } else if (lowerName == "exit") {
         emit("return");
-    } else if (functionName == "random") {
-        // random -> (static_cast<double>(std::rand()) / RAND_MAX)
+        return true;
+    } else if (lowerName == "random") {
         emit("(static_cast<double>(std::rand()) / RAND_MAX)");
-    } else if (functionName == "randomize") {
-        // randomize -> std::srand(std::time(nullptr))
+        return true;
+    } else if (lowerName == "randomize") {
         emit("std::srand(static_cast<unsigned int>(std::time(nullptr)))");
-    } else if (lowerName == "clrscr") {
-        // clrscr -> system("cls") on Windows, system("clear") on Unix
-        emit("#ifdef _WIN32\n    system(\"cls\");\n#else\n    system(\"clear\");\n#endif");
-    } else if (lowerName == "clreol") {
-        // clreol -> clear to end of line using ANSI escape codes
-        emit("std::cout << \"\\033[K\"");
-    } else if (lowerName == "gotoxy") {
-        // gotoxy(x, y) -> ANSI escape sequence to move cursor
-        emit("std::cout << \"\\033[\" << ");
-        if (node.getArguments().size() >= 2) {
-            node.getArguments()[1]->accept(*this);  // Y coordinate
-            emit(" << \";\" << ");
-            node.getArguments()[0]->accept(*this);  // X coordinate
-        }
-        emit(" << \"H\"");
-    } else if (lowerName == "textcolor") {
-        // textcolor(color) -> ANSI color codes with proper CRT to ANSI mapping
-        emit("std::cout << \"\\033[\" << (");
-        if (!node.getArguments().empty()) {
-            // Map CRT colors to ANSI colors
-            emit("([&]() { int crt_color = ");
-            node.getArguments()[0]->accept(*this);
-            emit("; switch(crt_color & 15) { "
-                 "case 0: return 30; "   // Black -> Black
-                 "case 1: return 34; "   // Blue -> Blue  
-                 "case 2: return 32; "   // Green -> Green
-                 "case 3: return 36; "   // Cyan -> Cyan
-                 "case 4: return 31; "   // Red -> Red
-                 "case 5: return 35; "   // Magenta -> Magenta
-                 "case 6: return 33; "   // Brown -> Yellow
-                 "case 7: return 37; "   // LightGray -> White
-                 "case 8: return 90; "   // DarkGray -> Bright Black
-                 "case 9: return 94; "   // LightBlue -> Bright Blue
-                 "case 10: return 92; "  // LightGreen -> Bright Green
-                 "case 11: return 96; "  // LightCyan -> Bright Cyan
-                 "case 12: return 91; "  // LightRed -> Bright Red
-                 "case 13: return 95; "  // LightMagenta -> Bright Magenta
-                 "case 14: return 93; "  // Yellow -> Bright Yellow
-                 "case 15: return 97; "  // White -> Bright White
-                 "default: return 37; } })()");
-        }
-        emit(") << \"m\"");
-    } else if (lowerName == "textbackground") {
-        // textbackground(color) -> ANSI background color codes
-        emit("std::cout << \"\\033[\" << (40 + (");
+        return true;
+    } else if (lowerName == "paramcount") {
+        emit("(pascal_argc - 1)");
+        return true;
+    } else if (lowerName == "paramstr") {
+        emit("std::string(pascal_argv[");
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this);
         }
-        emit(" & 15)) << \"m\"");
-    } else if (lowerName == "delay") {
-        // delay(ms) -> std::this_thread::sleep_for
-        emit("std::this_thread::sleep_for(std::chrono::milliseconds(");
+        emit("])");
+        return true;
+    }
+    return false;
+}
+
+bool CppGenerator::generateMemoryFunctionCall(CallExpression& node, const std::string& lowerName) {
+    if (lowerName == "new") {
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this);
-        }
-        emit("))");
-    } else if (lowerName == "keypressed") {
-        // keypressed -> check if input is available (platform-specific)
-        emit("#ifdef _WIN32\n    _kbhit()\n#else\n    false\n#endif");
-    } else if (lowerName == "readkey") {
-        // readkey -> read single character without echo
-        emit("#ifdef _WIN32\n    static_cast<char>(_getch())\n#else\n    getchar()\n#endif");
-    } else if (lowerName == "wherex" || lowerName == "wherey") {
-        // wherex/wherey -> return current cursor position (simplified)
-        emit("1");  // Simplified implementation
-    } else if (lowerName == "lowvideo" || lowerName == "highvideo" || lowerName == "normvideo" ||
-               lowerName == "window" || lowerName == "cursoron" || lowerName == "cursoroff" ||
-               lowerName == "sound" || lowerName == "nosound") {
-        // These functions don't have simple cross-platform implementations
-        // Generate empty statements for now
-        emit("/* " + functionName + " not implemented */");
-    } else if (lowerName == "fileexists") {
-        // fileexists(filename) -> std::filesystem::exists
-        emit("std::filesystem::exists(");
-        if (!node.getArguments().empty()) {
+            emit(" = std::make_unique<std::remove_pointer_t<decltype(");
             node.getArguments()[0]->accept(*this);
+            emit(")>>().release()");
         }
-        emit(")");
-    } else if (lowerName == "directoryexists") {
-        // directoryexists(dirname) -> std::filesystem::is_directory
-        emit("(std::filesystem::exists(");
+        return true;
+    } else if (lowerName == "dispose") {
         if (!node.getArguments().empty()) {
+            emit("delete ");
             node.getArguments()[0]->accept(*this);
-        }
-        emit(") && std::filesystem::is_directory(");
-        if (!node.getArguments().empty()) {
+            emit("; ");
             node.getArguments()[0]->accept(*this);
+            emit(" = nullptr");
         }
-        emit("))");
-    } else if (lowerName == "getcurrentdir") {
-        // getcurrentdir -> std::filesystem::current_path().string()
-        emit("std::filesystem::current_path().string()");
-    } else if (lowerName == "setcurrentdir") {
-        // setcurrentdir(dir) -> std::filesystem::current_path(dir)
-        emit("std::filesystem::current_path(");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit(")");
-    } else if (lowerName == "mkdir") {
-        // mkdir(dir) -> std::filesystem::create_directory
-        emit("std::filesystem::create_directory(");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit(")");
-    } else if (lowerName == "rmdir") {
-        // rmdir(dir) -> std::filesystem::remove
-        emit("std::filesystem::remove(");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit(")");
-    } else if (lowerName == "filesize") {
-        // filesize(filename) -> std::filesystem::file_size
-        emit("static_cast<int>(std::filesystem::file_size(");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit("))");
-    } else if (lowerName == "getenv") {
-        // getenv(varname) -> std::getenv
-        emit("(std::getenv(");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit(".c_str()) ? std::string(std::getenv(");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit(".c_str())) : std::string())");
-    } else if (lowerName == "getdate" || lowerName == "gettime") {
-        // getdate/gettime -> simplified timestamp
-        emit("static_cast<int>(std::time(nullptr))");
-    } else if (lowerName == "exec") {
-        // exec(command) -> std::system
-        emit("std::system(");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit(".c_str())");
-    } else if (lowerName == "findfirst" || lowerName == "findnext" || lowerName == "findclose" ||
-               lowerName == "getdatetime") {
-        // Complex functions that need proper implementation later
-        emit("/* " + functionName + " not fully implemented */");
-    } else if (lowerName == "blockread") {
-        // blockread(file, buffer, count, result) -> pascal_blockread(file, buffer, count, result)
-        emit("pascal_blockread(");
-        for (size_t i = 0; i < node.getArguments().size(); ++i) {
-            if (i > 0) emit(", ");
-            node.getArguments()[i]->accept(*this);
-        }
-        emit(")");
-    } else if (lowerName == "blockwrite") {
-        // blockwrite(file, buffer, count, result) -> pascal_blockwrite(file, buffer, count, result)
-        emit("pascal_blockwrite(");
-        for (size_t i = 0; i < node.getArguments().size(); ++i) {
-            if (i > 0) emit(", ");
-            node.getArguments()[i]->accept(*this);
-        }
-        emit(")");
-    } else if (lowerName == "filepos") {
-        // filepos(file) -> pascal_filepos(file)
-        emit("pascal_filepos(");
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this);
-        }
-        emit(")");
-    } else if (lowerName == "filesize") {
-        // filesize(file) -> pascal_filesize(file) for typed files
-        // or std::filesystem::file_size for file names
-        if (!node.getArguments().empty()) {
-            // TODO: Detect if argument is a file variable or filename string
-            emit("pascal_filesize(");
-            node.getArguments()[0]->accept(*this);
-            emit(")");
-        }
-    } else if (lowerName == "seek") {
-        // seek(file, position) -> pascal_seek(file, position)
-        emit("pascal_seek(");
-        for (size_t i = 0; i < node.getArguments().size(); ++i) {
-            if (i > 0) emit(", ");
-            node.getArguments()[i]->accept(*this);
-        }
-        emit(")");
-    } else if (lowerName == "inc") {
-        // inc(var [, amount]) -> var += amount (default amount is 1)
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this); // variable
-            emit(" += ");
-            if (node.getArguments().size() > 1) {
-                node.getArguments()[1]->accept(*this); // amount
-            } else {
-                emit("1"); // default increment
-            }
-        }
-    } else if (lowerName == "dec") {
-        // dec(var [, amount]) -> var -= amount (default amount is 1)
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this); // variable
-            emit(" -= ");
-            if (node.getArguments().size() > 1) {
-                node.getArguments()[1]->accept(*this); // amount
-            } else {
-                emit("1"); // default decrement
-            }
-        }
+        return true;
     } else if (lowerName == "getmem") {
-        // getmem(ptr, size) -> ptr = std::make_unique<uint8_t[]>(size).release()
         if (node.getArguments().size() >= 2) {
-            node.getArguments()[0]->accept(*this); // pointer variable
+            node.getArguments()[0]->accept(*this);
             emit(" = std::make_unique<uint8_t[]>(");
-            node.getArguments()[1]->accept(*this); // size
+            node.getArguments()[1]->accept(*this);
             emit(").release()");
         }
+        return true;
     } else if (lowerName == "freemem") {
-        // freemem(ptr [, size]) -> delete[] ptr; ptr = nullptr
         if (!node.getArguments().empty()) {
             emit("delete[] ");
-            node.getArguments()[0]->accept(*this); // pointer variable
+            node.getArguments()[0]->accept(*this);
             emit("; ");
-            node.getArguments()[0]->accept(*this); // pointer variable
+            node.getArguments()[0]->accept(*this);
             emit(" = nullptr");
         }
-    } else if (lowerName == "mark") {
-        // mark(ptr) -> ptr = malloc stack mark (simplified as assignment)
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this); // pointer variable
-            emit(" = reinterpret_cast<void*>(0xDEADBEEF)"); // placeholder mark
-        }
-    } else if (lowerName == "release") {
-        // release(ptr) -> free to mark point (simplified as nullptr assignment)
-        if (!node.getArguments().empty()) {
-            node.getArguments()[0]->accept(*this); // pointer variable
-            emit(" = nullptr");
-        }
-    } else {
-        // Default function call
-        emit(functionName + "(");
-        for (size_t i = 0; i < node.getArguments().size(); ++i) {
-            if (i > 0) emit(", ");
-            node.getArguments()[i]->accept(*this);
-        }
-        emit(")");
+        return true;
     }
+    return false;
+}
+
+bool CppGenerator::generateFileFunctionCall(CallExpression& node, const std::string& lowerName) {
+    if (lowerName == "assign") {
+        if (node.getArguments().size() >= 2) {
+            node.getArguments()[0]->accept(*this);
+            emit(".assign(");
+            node.getArguments()[1]->accept(*this);
+            emit(")");
+        }
+        return true;
+    } else if (lowerName == "reset") {
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+            emit(".reset()");
+        }
+        return true;
+    } else if (lowerName == "rewrite") {
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+            emit(".rewrite()");
+        }
+        return true;
+    } else if (lowerName == "close") {
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+            emit(".close()");
+        }
+        return true;
+    } else if (lowerName == "eof") {
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+            emit(".eof()");
+        }
+        return true;
+    }
+    return false;
 }
 
 std::string CppGenerator::generateVariableDeclaration(const std::string& name, const std::string& type, Expression* initializer) {
@@ -2023,8 +1847,11 @@ bool CppGenerator::isBuiltinFunction(const std::string& name) {
            // System unit mathematical functions
            lowerName == "abs" || lowerName == "sqr" || lowerName == "sqrt" || lowerName == "sin" ||
            lowerName == "cos" || lowerName == "arctan" || lowerName == "ln" || lowerName == "exp" ||
+           lowerName == "power" || lowerName == "tan" || lowerName == "round" || lowerName == "trunc" ||
            // System unit conversion functions  
            lowerName == "val" || lowerName == "str" ||
+           lowerName == "inttostr" || lowerName == "floattostr" || 
+           lowerName == "strtoint" || lowerName == "strtofloat" ||
            // System unit string functions
            lowerName == "upcase" || lowerName == "trim" || lowerName == "trimleft" ||
            lowerName == "trimright" || lowerName == "stringofchar" || lowerName == "lowercase" ||

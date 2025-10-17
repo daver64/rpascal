@@ -147,6 +147,29 @@ void pascal_seek(PascalTypedFile<T>& file, long position) {
     file.seek(position);
 }
 
+// Mathematical functions
+double pascal_power(double base, double exponent);
+int pascal_round(double value);
+int pascal_trunc(double value);
+
+// String conversion functions
+std::string pascal_inttostr(int value);
+std::string pascal_floattostr(double value);
+int pascal_strtoint(const std::string& str);
+double pascal_strtofloat(const std::string& str);
+
+// Format function
+std::string pascal_format(const std::string& format, const std::vector<std::string>& args);
+
+// Date/time functions (simplified)
+int pascal_dayofweek(int year, int month, int day);
+std::string pascal_datetostr(int year, int month, int day);
+std::string pascal_timetostr(int hour, int minute, int second);
+
+// Global variables for command-line arguments
+extern int pascal_argc;
+extern char** pascal_argv;
+
 // Placeholder for Pascal runtime library
 class PascalRuntime {
 public:

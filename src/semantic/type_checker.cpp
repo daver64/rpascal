@@ -1588,9 +1588,11 @@ bool SemanticAnalyzer::isBuiltinFunction(const std::string& functionName) {
            // System unit mathematical functions
            lowerName == "abs" || lowerName == "sqr" || lowerName == "sqrt" ||
            lowerName == "sin" || lowerName == "cos" || lowerName == "arctan" ||
-           lowerName == "ln" || lowerName == "exp" ||
+           lowerName == "ln" || lowerName == "exp" || lowerName == "power" ||
+           lowerName == "round" || lowerName == "trunc" || lowerName == "tan" ||
            // System unit conversion functions  
-           lowerName == "val" || lowerName == "str" ||
+           lowerName == "val" || lowerName == "str" || lowerName == "inttostr" ||
+           lowerName == "floattostr" || lowerName == "strtoint" || lowerName == "strtofloat" ||
            // System unit string functions
            lowerName == "upcase" || lowerName == "trim" || lowerName == "trimleft" ||
            lowerName == "trimright" || lowerName == "stringofchar" || lowerName == "lowercase" ||
@@ -1667,6 +1669,10 @@ void SemanticAnalyzer::handleBuiltinFunction(const std::string& functionName, Ca
                lowerName == "paramcount" || lowerName == "abs" ||
                // CRT functions returning integer
                lowerName == "wherex" || lowerName == "wherey" ||
+               // Mathematical functions returning integer
+               lowerName == "round" || lowerName == "trunc" ||
+               // Conversion functions returning integer/real
+               lowerName == "strtoint" ||
                // DOS functions returning integer
                lowerName == "filesize" || lowerName == "getdate" || lowerName == "gettime" ||
                lowerName == "exec") {
@@ -1682,12 +1688,18 @@ void SemanticAnalyzer::handleBuiltinFunction(const std::string& functionName, Ca
                lowerName == "stringofchar" || lowerName == "lowercase" || lowerName == "uppercase" ||
                lowerName == "leftstr" || lowerName == "rightstr" || lowerName == "padleft" ||
                lowerName == "padright" ||
+               // Conversion functions returning string
+               lowerName == "inttostr" || lowerName == "floattostr" ||
                // DOS functions returning string
                lowerName == "getcurrentdir" || lowerName == "getenv") {
         currentExpressionType_ = DataType::STRING;
     } else if (lowerName == "sqr" || lowerName == "sqrt" || lowerName == "sin" ||
                lowerName == "cos" || lowerName == "arctan" || lowerName == "ln" ||
-               lowerName == "exp" || lowerName == "random") {
+               lowerName == "exp" || lowerName == "random" ||
+               // Additional mathematical functions returning real
+               lowerName == "power" || lowerName == "tan" ||
+               // Conversion functions returning real
+               lowerName == "strtofloat") {
         currentExpressionType_ = DataType::REAL;
     } else if (lowerName == "eof" ||
                // CRT functions returning boolean
