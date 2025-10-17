@@ -237,9 +237,18 @@ void CppGenerator::visit(CallExpression& node) {
 }
 
 void CppGenerator::visit(FieldAccessExpression& node) {
-    node.getObject()->accept(*this);
-    emit(".");
-    emit(node.getFieldName());
+    // Check if the object is a dereference expression
+    if (auto dereferenceExpr = dynamic_cast<DereferenceExpression*>(node.getObject())) {
+        // Use -> syntax instead of *(ptr).field
+        dereferenceExpr->getOperand()->accept(*this);
+        emit("->");
+        emit(node.getFieldName());
+    } else {
+        // Regular field access
+        node.getObject()->accept(*this);
+        emit(".");
+        emit(node.getFieldName());
+    }
 }
 
 void CppGenerator::visit(ArrayIndexExpression& node) {
@@ -394,15 +403,13 @@ void CppGenerator::visit(ArrayIndexExpression& node) {
 }
 
 void CppGenerator::visit(SetLiteralExpression& node) {
-    // Generate C++ set literal as std::set<int> and cast all elements to int
-    // This handles both integer literals and enum values uniformly
-    emit("std::set<int>{");
+    // For now, generate a universal set literal that can be assigned to different set types
+    // We'll use brace initialization which can be converted to the target type
+    emit("{");
     const auto& elements = node.getElements();
     for (size_t i = 0; i < elements.size(); ++i) {
         if (i > 0) emit(", ");
-        emit("static_cast<int>(");
         elements[i]->accept(*this);
-        emit(")");
     }
     emit("}");
 }
@@ -427,12 +434,21 @@ void CppGenerator::visit(AssignmentStatement& node) {
     if (targetId && !currentFunctionOriginalName_.empty() && targetId->getName() == currentFunctionOriginalName_) {
         // This is an assignment to the function name (return value)
         emit(currentFunctionOriginalName_ + "_result = ");
+        node.getValue()->accept(*this);
     } else {
         node.getTarget()->accept(*this);
         emit(" = ");
+        
+        // Check if we need type conversion for char to string assignment
+        if (needsCharToStringConversion(node)) {
+            emit("std::string(1, ");
+            node.getValue()->accept(*this);
+            emit(")");
+        } else {
+            node.getValue()->accept(*this);
+        }
     }
     
-    node.getValue()->accept(*this);
     emitLine(";");
 }
 
@@ -923,6 +939,28 @@ bool CppGenerator::isStringExpression(Expression* expr) {
     // Check if it's array access on a string (string indexing)
     if (auto arrayAccess = dynamic_cast<ArrayIndexExpression*>(expr)) {
         return isStringExpression(arrayAccess->getArray());
+    }
+    
+    return false;
+}
+
+bool CppGenerator::needsCharToStringConversion(AssignmentStatement& node) {
+    // Check if target is a string variable and value is a char expression
+    auto targetId = dynamic_cast<IdentifierExpression*>(node.getTarget());
+    if (!targetId || !symbolTable_) return false;
+    
+    auto targetSymbol = symbolTable_->lookup(targetId->getName());
+    if (!targetSymbol || targetSymbol->getDataType() != DataType::STRING) return false;
+    
+    // Check if value is a char literal
+    if (auto literal = dynamic_cast<LiteralExpression*>(node.getValue())) {
+        return literal->getToken().getType() == TokenType::CHAR_LITERAL;
+    }
+    
+    // Check if value is a char variable
+    if (auto valueId = dynamic_cast<IdentifierExpression*>(node.getValue())) {
+        auto valueSymbol = symbolTable_->lookup(valueId->getName());
+        return valueSymbol && valueSymbol->getDataType() == DataType::CHAR;
     }
     
     return false;
@@ -2260,7 +2298,19 @@ void CppGenerator::generatePointerDefinition(const std::string& typeName, const 
         std::string cppPointeeType = mapPascalTypeToCpp(pointeeType);
         
         emitLine("// Pointer type definition: " + typeName + " = " + definition);
-        emitLine("using " + typeName + " = " + cppPointeeType + "*;");
+        
+        // Check if this pointee type looks like a Pascal record type (starts with capital)
+        // and hasn't been mapped to a basic C++ type
+        bool needsForwardDecl = !pointeeType.empty() && std::isupper(pointeeType[0]) && 
+                               cppPointeeType == pointeeType &&
+                               pointeeType.find("Node") != std::string::npos; // Heuristic for record types
+        
+        if (needsForwardDecl) {
+            emitLine("struct " + pointeeType + "; // Forward declaration");
+            emitLine("using " + typeName + " = " + pointeeType + "*;");
+        } else {
+            emitLine("using " + typeName + " = " + cppPointeeType + "*;");
+        }
     } else {
         emitLine("// Invalid pointer definition: " + definition);
         emitLine("using " + typeName + " = void*;");

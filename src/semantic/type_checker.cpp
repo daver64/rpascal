@@ -251,6 +251,19 @@ void SemanticAnalyzer::visit(DereferenceExpression& node) {
         }
     }
     
+    // If the operand is a field access or other expression that results in a pointer,
+    // we need to determine the pointee type from the type name
+    if (currentExpressionType_ == DataType::POINTER && !currentExpressionTypeName_.empty()) {
+        // Try to resolve the pointee type from the pointer type name
+        auto pointerTypeSymbol = symbolTable_->lookup(currentExpressionTypeName_);
+        if (pointerTypeSymbol && pointerTypeSymbol->getSymbolType() == SymbolType::TYPE_DEF && 
+            pointerTypeSymbol->getDataType() == DataType::POINTER) {
+            currentExpressionType_ = pointerTypeSymbol->getPointeeType();
+            currentExpressionTypeName_ = pointerTypeSymbol->getPointeeTypeName();
+            return;
+        }
+    }
+    
     // For basic testing, assume integer pointers if we can't determine the type
     currentExpressionType_ = DataType::INTEGER;
     currentExpressionTypeName_ = "";
@@ -267,7 +280,7 @@ void SemanticAnalyzer::visit(FieldAccessExpression& node) {
     // Save the object's type before we potentially overwrite currentExpressionType_
     DataType objectType = currentExpressionType_;
     
-    if (objectType == DataType::CUSTOM) {
+    if (objectType == DataType::CUSTOM || (objectType == DataType::UNKNOWN && !currentExpressionTypeName_.empty())) {
         std::string recordTypeName;
         
         // Case 1: Object is an identifier (e.g., p.x)
@@ -307,6 +320,13 @@ void SemanticAnalyzer::visit(FieldAccessExpression& node) {
                 }
             }
         }
+        // Case 3: Object is a dereference expression (e.g., ptr^.data)
+        else if (auto dereferenceExpr = dynamic_cast<DereferenceExpression*>(node.getObject())) {
+            // The dereference expression should have already been processed and 
+            // currentExpressionType_ should be set to the pointee type
+            // For record pointers, currentExpressionTypeName_ should contain the record type name
+            recordTypeName = currentExpressionTypeName_;
+        }
         
         if (!recordTypeName.empty()) {
             auto recordTypeSymbol = symbolTable_->lookup(recordTypeName);
@@ -320,6 +340,7 @@ void SemanticAnalyzer::visit(FieldAccessExpression& node) {
                     std::string fieldTypeName = getFieldTypeFromRecord(node.getFieldName(), recordDef);
                     DataType fieldType = symbolTable_->resolveDataType(fieldTypeName);
                     currentExpressionType_ = fieldType;
+                    currentExpressionTypeName_ = fieldTypeName;
                     return;
                 } else {
                     addError("Field '" + node.getFieldName() + "' not found in record type '" + recordTypeName + "'");
@@ -975,6 +996,11 @@ bool SemanticAnalyzer::areTypesCompatible(DataType left, DataType right, const s
         return true;
     }
     
+    // Char is compatible with string (for assignments)
+    if (left == DataType::STRING && right == DataType::CHAR) {
+        return true;
+    }
+
     return false;
 }
 
@@ -1005,8 +1031,10 @@ DataType SemanticAnalyzer::getResultType(DataType left, DataType right, TokenTyp
         if (left == DataType::CUSTOM && right == DataType::CUSTOM) {
             return DataType::CUSTOM;
         }
-        // String concatenation
-        if (left == DataType::STRING && right == DataType::STRING) {
+        // String concatenation: string + string, string + char, char + string all return string
+        if ((left == DataType::STRING && right == DataType::STRING) ||
+            (left == DataType::STRING && right == DataType::CHAR) ||
+            (left == DataType::CHAR && right == DataType::STRING)) {
             return DataType::STRING;
         }
         // Arithmetic addition
@@ -1070,7 +1098,10 @@ bool SemanticAnalyzer::isValidBinaryOperation(DataType leftType, DataType rightT
             // Allow numeric addition, string concatenation, set union, and pointer arithmetic
             return ((leftType == DataType::INTEGER || leftType == DataType::REAL) &&
                     (rightType == DataType::INTEGER || rightType == DataType::REAL)) ||
+                   // String concatenation: string + string, string + char, char + string
                    (leftType == DataType::STRING && rightType == DataType::STRING) ||
+                   (leftType == DataType::STRING && rightType == DataType::CHAR) ||
+                   (leftType == DataType::CHAR && rightType == DataType::STRING) ||
                    (leftType == DataType::CUSTOM && rightType == DataType::CUSTOM) ||
                    // Pointer arithmetic: pointer + integer
                    (leftType == DataType::POINTER && rightType == DataType::INTEGER) ||

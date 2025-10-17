@@ -246,6 +246,10 @@ DataType SymbolTable::resolveDataType(const std::string& typeStr) {
     // Check for custom type definitions
     auto symbol = lookup(typeStr);
     if (symbol && symbol->getSymbolType() == SymbolType::TYPE_DEF) {
+        // If it's a pointer type definition, return POINTER, not CUSTOM
+        if (symbol->getDataType() == DataType::POINTER) {
+            return DataType::POINTER;
+        }
         return DataType::CUSTOM;
     }
     

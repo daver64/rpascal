@@ -142,6 +142,7 @@ private:
     bool isBuiltinConstant(const std::string& name);
     int getBuiltinConstantValue(const std::string& name);
     bool isStringExpression(Expression* expr);
+    bool needsCharToStringConversion(AssignmentStatement& node);
     std::string escapeCppString(const std::string& str);
 };
 
