@@ -317,6 +317,10 @@ void SymbolTable::initializeBuiltinSymbols() {
     // writeln can take variable arguments, we'll handle this specially in semantic analysis
     define("writeln", writeln);
     
+    auto write = std::make_shared<Symbol>("write", SymbolType::PROCEDURE, DataType::VOID, 0);
+    // write can take variable arguments, we'll handle this specially in semantic analysis
+    define("write", write);
+    
     auto readln = std::make_shared<Symbol>("readln", SymbolType::PROCEDURE, DataType::VOID, 0);
     define("readln", readln);
     

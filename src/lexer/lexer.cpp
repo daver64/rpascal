@@ -237,20 +237,23 @@ Token Lexer::parseString() {
     SourceLocation startLocation = makeLocation();
     std::string value;
     
-    // Skip opening quote
-    while (!isAtEnd() && peek() != '\'') {
-        if (peek() == '\n') {
+    // Skip opening quote was already consumed in nextToken()
+    while (!isAtEnd()) {
+        if (peek() == '\'') {
+            if (peekNext() == '\'') {
+                // Escaped quote in Pascal: ''
+                advance(); // consume first '
+                advance(); // consume second '
+                value += '\''; // add one quote to the string value
+            } else {
+                // End of string
+                break;
+            }
+        } else if (peek() == '\n') {
             addError("Unterminated string literal");
             break;
-        }
-        
-        char c = advance();
-        if (c == '\'' && peek() == '\'') {
-            // Escaped quote in Pascal
-            value += '\'';
-            advance(); // consume second quote
         } else {
-            value += c;
+            value += advance();
         }
     }
     

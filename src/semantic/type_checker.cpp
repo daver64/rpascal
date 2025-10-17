@@ -327,6 +327,19 @@ void SemanticAnalyzer::visit(FieldAccessExpression& node) {
             // For record pointers, currentExpressionTypeName_ should contain the record type name
             recordTypeName = currentExpressionTypeName_;
         }
+        // Case 4: Object is an array index expression (e.g., nodes[1].data)
+        else if (auto arrayIndexExpr = dynamic_cast<ArrayIndexExpression*>(node.getObject())) {
+            // For array indexing, we need to find the element type of the array
+            if (auto arrayIdent = dynamic_cast<IdentifierExpression*>(arrayIndexExpr->getArray())) {
+                auto arraySymbol = symbolTable_->lookup(arrayIdent->getName());
+                if (arraySymbol && arraySymbol->getSymbolType() == SymbolType::VARIABLE) {
+                    // For arrays of records, the element type is the record type
+                    // The currentExpressionType_ should already be set to the element type
+                    // and currentExpressionTypeName_ should contain the type name
+                    recordTypeName = currentExpressionTypeName_;
+                }
+            }
+        }
         
         if (!recordTypeName.empty()) {
             auto recordTypeSymbol = symbolTable_->lookup(recordTypeName);
@@ -360,6 +373,7 @@ void SemanticAnalyzer::visit(ArrayIndexExpression& node) {
     // Visit both expressions to ensure they're valid
     node.getArray()->accept(*this);
     DataType arrayType = currentExpressionType_;
+    std::string arrayTypeName = currentExpressionTypeName_;
     
     node.getIndex()->accept(*this);
     DataType indexType = currentExpressionType_;
@@ -368,6 +382,7 @@ void SemanticAnalyzer::visit(ArrayIndexExpression& node) {
     if (indexType != DataType::INTEGER) {
         addError("Array index must be an integer");
         currentExpressionType_ = DataType::UNKNOWN;
+        currentExpressionTypeName_ = "";
         return;
     }
     
@@ -375,13 +390,37 @@ void SemanticAnalyzer::visit(ArrayIndexExpression& node) {
     if (arrayType == DataType::STRING) {
         // String indexing returns a character
         currentExpressionType_ = DataType::CHAR;
+        currentExpressionTypeName_ = "";
     } else if (arrayType == DataType::CUSTOM) {
-        // For arrays or other custom types, we'd need more type information
-        // For now, assume integer (this is a simplification)
-        currentExpressionType_ = DataType::INTEGER;
+        // For arrays, extract the element type from the array type definition
+        // Array type names are in format "array[start..end] of ElementType"
+        if (arrayTypeName.find("array") == 0 && arrayTypeName.find(" of ") != std::string::npos) {
+            size_t ofPos = arrayTypeName.find(" of ");
+            std::string elementTypeName = arrayTypeName.substr(ofPos + 4); // Skip " of "
+            
+            // Trim whitespace
+            size_t start = elementTypeName.find_first_not_of(" \t");
+            if (start != std::string::npos) {
+                elementTypeName = elementTypeName.substr(start);
+                size_t end = elementTypeName.find_last_not_of(" \t");
+                if (end != std::string::npos) {
+                    elementTypeName = elementTypeName.substr(0, end + 1);
+                }
+            }
+            
+            // Set the element type as the result
+            DataType elementDataType = symbolTable_->resolveDataType(elementTypeName);
+            currentExpressionType_ = elementDataType;
+            currentExpressionTypeName_ = elementTypeName;
+        } else {
+            // For other custom types, preserve as-is
+            currentExpressionType_ = DataType::CUSTOM;
+            currentExpressionTypeName_ = arrayTypeName;
+        }
     } else {
         addError("Cannot index into non-array type: " + SymbolTable::dataTypeToString(arrayType));
         currentExpressionType_ = DataType::UNKNOWN;
+        currentExpressionTypeName_ = "";
     }
 }
 
@@ -402,6 +441,31 @@ void SemanticAnalyzer::visit(SetLiteralExpression& node) {
     // Set the result type as a set type (for now, use CUSTOM)
     // In a full implementation, we'd have specific set types
     currentExpressionType_ = DataType::CUSTOM;
+}
+
+void SemanticAnalyzer::visit(FormattedExpression& node) {
+    // Visit the main expression to get its type
+    const_cast<Expression*>(node.getExpression())->accept(*this);
+    DataType expressionType = currentExpressionType_;
+    
+    // Visit width specifier if present
+    if (node.getWidth()) {
+        const_cast<Expression*>(node.getWidth())->accept(*this);
+        if (currentExpressionType_ != DataType::INTEGER) {
+            addError("Width specifier must be an integer");
+        }
+    }
+    
+    // Visit precision specifier if present
+    if (node.getPrecision()) {
+        const_cast<Expression*>(node.getPrecision())->accept(*this);
+        if (currentExpressionType_ != DataType::INTEGER) {
+            addError("Precision specifier must be an integer");
+        }
+    }
+    
+    // Result type is the same as the expression being formatted
+    currentExpressionType_ = expressionType;
 }
 
 void SemanticAnalyzer::visit(ExpressionStatement& node) {
@@ -458,7 +522,8 @@ void SemanticAnalyzer::visit(ForStatement& node) {
     
     // Check that loop variable is an ordinal type (integer, char, enum, etc.)
     DataType varType = variable->getDataType();
-    if (varType != DataType::INTEGER && varType != DataType::CHAR && varType != DataType::UNKNOWN) {
+    if (varType != DataType::INTEGER && varType != DataType::CHAR && 
+        varType != DataType::CUSTOM && varType != DataType::UNKNOWN) {
         addError("For loop variable must be an ordinal type, got " + SymbolTable::dataTypeToString(varType));
     }
     
@@ -1072,6 +1137,20 @@ DataType SemanticAnalyzer::getResultType(DataType left, DataType right, TokenTyp
         return DataType::INTEGER;
     }
     
+    // Range operator: returns the same type as operands (used in case statements, sets)
+    if (operator_ == TokenType::RANGE) {
+        // For integer ranges, return integer type
+        if ((left == DataType::INTEGER || left == DataType::BYTE) &&
+            (right == DataType::INTEGER || right == DataType::BYTE)) {
+            return DataType::INTEGER;
+        }
+        // For character ranges, return character type
+        if (left == DataType::CHAR && right == DataType::CHAR) {
+            return DataType::CHAR;
+        }
+        return left; // Default to left operand type
+    }
+    
     return left; // Default to left operand type
 }
 
@@ -1096,8 +1175,8 @@ bool SemanticAnalyzer::isValidBinaryOperation(DataType leftType, DataType rightT
     switch (operator_) {
         case TokenType::PLUS:
             // Allow numeric addition, string concatenation, set union, and pointer arithmetic
-            return ((leftType == DataType::INTEGER || leftType == DataType::REAL) &&
-                    (rightType == DataType::INTEGER || rightType == DataType::REAL)) ||
+            return ((leftType == DataType::INTEGER || leftType == DataType::REAL || leftType == DataType::BYTE) &&
+                    (rightType == DataType::INTEGER || rightType == DataType::REAL || rightType == DataType::BYTE)) ||
                    // String concatenation: string + string, string + char, char + string
                    (leftType == DataType::STRING && rightType == DataType::STRING) ||
                    (leftType == DataType::STRING && rightType == DataType::CHAR) ||
@@ -1108,24 +1187,25 @@ bool SemanticAnalyzer::isValidBinaryOperation(DataType leftType, DataType rightT
                    (leftType == DataType::INTEGER && rightType == DataType::POINTER);
         case TokenType::MINUS:
             // Allow numeric subtraction, set difference, and pointer arithmetic
-            return ((leftType == DataType::INTEGER || leftType == DataType::REAL) &&
-                    (rightType == DataType::INTEGER || rightType == DataType::REAL)) ||
+            return ((leftType == DataType::INTEGER || leftType == DataType::REAL || leftType == DataType::BYTE) &&
+                    (rightType == DataType::INTEGER || rightType == DataType::REAL || rightType == DataType::BYTE)) ||
                    (leftType == DataType::CUSTOM && rightType == DataType::CUSTOM) ||
                    // Pointer arithmetic: pointer - integer or pointer - pointer
                    (leftType == DataType::POINTER && rightType == DataType::INTEGER) ||
                    (leftType == DataType::POINTER && rightType == DataType::POINTER);
         case TokenType::MULTIPLY:
             // Allow numeric multiplication and set intersection
-            return ((leftType == DataType::INTEGER || leftType == DataType::REAL) &&
-                    (rightType == DataType::INTEGER || rightType == DataType::REAL)) ||
+            return ((leftType == DataType::INTEGER || leftType == DataType::REAL || leftType == DataType::BYTE) &&
+                    (rightType == DataType::INTEGER || rightType == DataType::REAL || rightType == DataType::BYTE)) ||
                    (leftType == DataType::CUSTOM && rightType == DataType::CUSTOM);
         case TokenType::DIVIDE:
-            return (leftType == DataType::INTEGER || leftType == DataType::REAL) &&
-                   (rightType == DataType::INTEGER || rightType == DataType::REAL);
+            return (leftType == DataType::INTEGER || leftType == DataType::REAL || leftType == DataType::BYTE) &&
+                   (rightType == DataType::INTEGER || rightType == DataType::REAL || rightType == DataType::BYTE);
                    
         case TokenType::DIV:
         case TokenType::MOD:
-            return leftType == DataType::INTEGER && rightType == DataType::INTEGER;
+            return (leftType == DataType::INTEGER || leftType == DataType::BYTE) && 
+                   (rightType == DataType::INTEGER || rightType == DataType::BYTE);
             
         case TokenType::EQUAL:
         case TokenType::NOT_EQUAL:
@@ -1135,8 +1215,8 @@ bool SemanticAnalyzer::isValidBinaryOperation(DataType leftType, DataType rightT
         case TokenType::LESS_EQUAL:
         case TokenType::GREATER_THAN:
         case TokenType::GREATER_EQUAL:
-            return ((leftType == DataType::INTEGER || leftType == DataType::REAL) &&
-                    (rightType == DataType::INTEGER || rightType == DataType::REAL)) ||
+            return ((leftType == DataType::INTEGER || leftType == DataType::REAL || leftType == DataType::BYTE || leftType == DataType::CHAR) &&
+                    (rightType == DataType::INTEGER || rightType == DataType::REAL || rightType == DataType::BYTE || rightType == DataType::CHAR)) ||
                    // Pointer comparisons
                    (leftType == DataType::POINTER && rightType == DataType::POINTER);
                    
@@ -1149,6 +1229,12 @@ bool SemanticAnalyzer::isValidBinaryOperation(DataType leftType, DataType rightT
         case TokenType::OR:
         case TokenType::XOR:
             return leftType == DataType::BOOLEAN && rightType == DataType::BOOLEAN;
+            
+        case TokenType::RANGE:
+            // Range operator: integer..integer or char..char (for case statements, sets, etc.)
+            return ((leftType == DataType::INTEGER || leftType == DataType::BYTE) &&
+                    (rightType == DataType::INTEGER || rightType == DataType::BYTE)) ||
+                   (leftType == DataType::CHAR && rightType == DataType::CHAR);
             
         default:
             return false;
@@ -1207,7 +1293,7 @@ void SemanticAnalyzer::checkFunctionCall(CallExpression& node) {
     }
     
     // Special handling for built-in functions like writeln (variable arguments)
-    if (functionName == "writeln" || functionName == "readln") {
+    if (functionName == "writeln" || functionName == "write" || functionName == "readln") {
         // Accept any number and type of arguments for now
         for (const auto& arg : node.getArguments()) {
             arg->accept(*this);
@@ -1607,7 +1693,7 @@ bool SemanticAnalyzer::isBuiltinFunction(const std::string& functionName) {
     std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), 
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     
-    return lowerName == "writeln" || lowerName == "readln" || lowerName == "read" ||
+    return lowerName == "writeln" || lowerName == "write" || lowerName == "readln" || lowerName == "read" ||
            lowerName == "length" || lowerName == "chr" || lowerName == "ord" || 
            lowerName == "pos" || lowerName == "copy" || lowerName == "concat" ||
            lowerName == "insert" || lowerName == "delete" || lowerName == "assign" ||
@@ -1680,7 +1766,7 @@ void SemanticAnalyzer::handleBuiltinFunction(const std::string& functionName, Ca
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     
     // Set return type based on function
-    if (lowerName == "writeln" || lowerName == "readln" || lowerName == "read" ||
+    if (lowerName == "writeln" || lowerName == "write" || lowerName == "readln" || lowerName == "read" ||
         lowerName == "insert" || lowerName == "delete" || lowerName == "assign" ||
         lowerName == "reset" || lowerName == "rewrite" || lowerName == "close" ||
         lowerName == "new" || lowerName == "dispose" || lowerName == "halt" ||

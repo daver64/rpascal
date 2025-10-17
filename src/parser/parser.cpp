@@ -690,11 +690,31 @@ std::unique_ptr<CaseStatement> Parser::parseCaseStatement() {
     while (!check(TokenType::ELSE) && !check(TokenType::END) && !isAtEnd()) {
         // Parse case values (can be multiple: value1, value2, value3)
         std::vector<std::unique_ptr<Expression>> values;
-        values.push_back(parseExpression());
+        
+        auto firstExpr = parseExpression();
+        // Check if this is a range expression (e.g., 1..10)
+        if (check(TokenType::RANGE)) {
+            Token rangeToken = currentToken_;
+            advance(); // consume '..'
+            auto secondExpr = parseExpression();
+            // Create a range expression using the range token
+            values.push_back(std::make_unique<BinaryExpression>(std::move(firstExpr), rangeToken, std::move(secondExpr)));
+        } else {
+            values.push_back(std::move(firstExpr));
+        }
         
         // Parse additional values separated by commas
         while (match(TokenType::COMMA)) {
-            values.push_back(parseExpression());
+            auto expr = parseExpression();
+            // Check if this is also a range expression
+            if (check(TokenType::RANGE)) {
+                Token rangeToken = currentToken_;
+                advance(); // consume '..'
+                auto secondExpr = parseExpression();
+                values.push_back(std::make_unique<BinaryExpression>(std::move(expr), rangeToken, std::move(secondExpr)));
+            } else {
+                values.push_back(std::move(expr));
+            }
         }
         
         consume(TokenType::COLON, "Expected ':' after case value");
@@ -711,6 +731,10 @@ std::unique_ptr<CaseStatement> Parser::parseCaseStatement() {
     // Parse optional else clause
     if (match(TokenType::ELSE)) {
         elseClause = parseStatement();
+        // Consume optional semicolon after else clause
+        if (check(TokenType::SEMICOLON)) {
+            advance();
+        }
     }
     
     consume(TokenType::END, "Expected 'end'");
@@ -750,7 +774,7 @@ std::unique_ptr<Expression> Parser::parseExpression() {
 std::unique_ptr<Expression> Parser::parseOrExpression() {
     auto expr = parseAndExpression();
     
-    while (check(TokenType::OR)) {
+    while (check(TokenType::OR) || check(TokenType::XOR)) {
         Token op = currentToken_;
         advance();
         auto right = parseAndExpression();
@@ -1189,7 +1213,24 @@ std::vector<std::unique_ptr<Expression>> Parser::parseArgumentList() {
     
     if (!check(TokenType::RIGHT_PAREN)) {
         do {
-            arguments.push_back(parseExpression());
+            // Parse the base expression
+            auto expr = parseExpression();
+            
+            // Check for format specifiers (Pascal: expr:width:precision)
+            if (match(TokenType::COLON)) {
+                auto width = parseExpression();
+                std::unique_ptr<Expression> precision = nullptr;
+                
+                // Optional precision specifier
+                if (match(TokenType::COLON)) {
+                    precision = parseExpression();
+                }
+                
+                // Create a formatted expression
+                expr = std::make_unique<FormattedExpression>(std::move(expr), std::move(width), std::move(precision));
+            }
+            
+            arguments.push_back(std::move(expr));
         } while (match(TokenType::COMMA));
     }
     

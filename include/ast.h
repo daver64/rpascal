@@ -208,6 +208,26 @@ private:
     std::vector<std::unique_ptr<Expression>> elements_;
 };
 
+class FormattedExpression : public Expression {
+public:
+    FormattedExpression(std::unique_ptr<Expression> expr,
+                       std::unique_ptr<Expression> width = nullptr,
+                       std::unique_ptr<Expression> precision = nullptr)
+        : expression_(std::move(expr)), width_(std::move(width)), precision_(std::move(precision)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const Expression* getExpression() const { return expression_.get(); }
+    const Expression* getWidth() const { return width_.get(); }
+    const Expression* getPrecision() const { return precision_.get(); }
+    
+private:
+    std::unique_ptr<Expression> expression_;
+    std::unique_ptr<Expression> width_;
+    std::unique_ptr<Expression> precision_;
+};
+
 // Statement types
 class ExpressionStatement : public Statement {
 public:
@@ -726,6 +746,7 @@ public:
     virtual void visit(FieldAccessExpression& node) = 0;
     virtual void visit(ArrayIndexExpression& node) = 0;
     virtual void visit(SetLiteralExpression& node) = 0;
+    virtual void visit(FormattedExpression& node) = 0;
     
     virtual void visit(ExpressionStatement& node) = 0;
     virtual void visit(CompoundStatement& node) = 0;

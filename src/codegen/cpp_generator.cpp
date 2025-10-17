@@ -53,6 +53,17 @@ void CppGenerator::visit(LiteralExpression& node) {
 void CppGenerator::visit(IdentifierExpression& node) {
     std::string name = node.getName();
     
+    // Check if this is a user-defined enumeration constant first
+    if (symbolTable_) {
+        auto symbol = symbolTable_->lookup(name);
+        if (symbol && symbol->getSymbolType() == SymbolType::CONSTANT && 
+            symbol->getDataType() == DataType::CUSTOM) {
+            // This is a user-defined enumeration constant, emit as-is
+            emit(name);
+            return;
+        }
+    }
+    
     // Check if this is a built-in constant
     if (isBuiltinConstant(name)) {
         emit(std::to_string(getBuiltinConstantValue(name)));
@@ -119,6 +130,19 @@ void CppGenerator::visit(IdentifierExpression& node) {
 }
 
 void CppGenerator::visit(BinaryExpression& node) {
+    // Handle range operator in case statements (1..10 means values 1 through 10)
+    if (node.getOperator().getType() == TokenType::RANGE) {
+        // For now, emit a comment indicating this is a range
+        // In a full implementation, we'd need to detect case statements and generate multiple case labels
+        emit("/* RANGE: ");
+        node.getLeft()->accept(*this);
+        emit(" to ");
+        node.getRight()->accept(*this);
+        emit(" */");
+        // We'll need to handle this properly in case statements later
+        return;
+    }
+    
     // Handle special operators
     if (node.getOperator().getType() == TokenType::IN) {
         // Pascal 'in' operator: element in set
@@ -414,6 +438,17 @@ void CppGenerator::visit(SetLiteralExpression& node) {
     emit("}");
 }
 
+void CppGenerator::visit(FormattedExpression& node) {
+    // For formatted output in C++, we'll use the main expression
+    // Width and precision will be handled by the output stream
+    // For now, just output the expression (formatting will be done at runtime)
+    const_cast<Expression*>(node.getExpression())->accept(*this);
+    
+    // TODO: In a full implementation, we could generate proper formatting code
+    // For Pascal format "expr:width:precision", we could generate:
+    // std::setw(width) << std::setprecision(precision) << expr
+}
+
 void CppGenerator::visit(ExpressionStatement& node) {
     emitIndent();
     node.getExpression()->accept(*this);
@@ -489,18 +524,22 @@ void CppGenerator::visit(ForStatement& node) {
     emitIndent();
     if (node.isDownto()) {
         // For downto loops: for (var = start; var >= end; var--)
+        // Special handling for enum types
         emit("for (" + node.getVariable() + " = ");
         node.getStart()->accept(*this);
         emit("; " + node.getVariable() + " >= ");
         node.getEnd()->accept(*this);
-        emitLine("; " + node.getVariable() + "--) {");
+        emit("; " + node.getVariable() + " = static_cast<decltype(" + node.getVariable() + ")>(static_cast<int>(" + node.getVariable() + ") - 1)");
+        emitLine(") {");
     } else {
         // For to loops: for (var = start; var <= end; var++)
+        // Special handling for enum types
         emit("for (" + node.getVariable() + " = ");
         node.getStart()->accept(*this);
         emit("; " + node.getVariable() + " <= ");
         node.getEnd()->accept(*this);
-        emitLine("; " + node.getVariable() + "++) {");
+        emit("; " + node.getVariable() + " = static_cast<decltype(" + node.getVariable() + ")>(static_cast<int>(" + node.getVariable() + ") + 1)");
+        emitLine(") {");
     }
     
     increaseIndent();
@@ -535,6 +574,37 @@ void CppGenerator::visit(CaseStatement& node) {
     // Generate case branches
     for (const auto& branch : node.getBranches()) {
         for (const auto& value : branch->getValues()) {
+            // Check if this is a range expression
+            if (auto binaryExpr = dynamic_cast<BinaryExpression*>(value.get())) {
+                if (binaryExpr->getOperator().getType() == TokenType::RANGE) {
+                    // Handle range: generate multiple case labels
+                    // For simplicity, assuming integer ranges for now
+                    
+                    // Get start and end values (assuming they are integer literals)
+                    auto leftLiteral = dynamic_cast<LiteralExpression*>(binaryExpr->getLeft());
+                    auto rightLiteral = dynamic_cast<LiteralExpression*>(binaryExpr->getRight());
+                    
+                    if (leftLiteral && rightLiteral) {
+                        int start = std::stoi(leftLiteral->getToken().getValue());
+                        int end = std::stoi(rightLiteral->getToken().getValue());
+                        
+                        // Generate case labels for each value in range
+                        for (int i = start; i <= end; ++i) {
+                            emitIndent();
+                            emitLine("case " + std::to_string(i) + ":");
+                        }
+                    } else {
+                        // Fallback: emit comment
+                        emitIndent();
+                        emit("/* case ");
+                        value->accept(*this);
+                        emitLine(": */");
+                    }
+                    continue;
+                }
+            }
+            
+            // Regular case value
             emitIndent();
             emit("case ");
             value->accept(*this);
@@ -1119,9 +1189,13 @@ std::string CppGenerator::mapPascalTypeToCpp(const std::string& pascalType) {
         size_t bracketEnd = lowerType.find(']');
         size_t ofPos = lowerType.find(" of ");
         
-        if (bracketStart != std::string::npos && bracketEnd != std::string::npos && ofPos != std::string::npos) {
+        // Also find positions in original string to preserve case
+        size_t origOfPos = pascalType.find(" of ");
+        
+        if (bracketStart != std::string::npos && bracketEnd != std::string::npos && ofPos != std::string::npos && origOfPos != std::string::npos) {
             std::string bounds = lowerType.substr(bracketStart + 1, bracketEnd - bracketStart - 1);
-            std::string elementType = lowerType.substr(ofPos + 4);
+            // Extract element type from original string to preserve case
+            std::string elementType = pascalType.substr(origOfPos + 4);
             elementType.erase(0, elementType.find_first_not_of(" \t\n\r")); // Trim leading whitespace
             
             // Parse the bounds: start..end
@@ -1302,20 +1376,24 @@ void CppGenerator::generateBuiltinCall(CallExpression& node, const std::string& 
 
 bool CppGenerator::generateBasicIOCall(CallExpression& node, const std::string& lowerName) {
     if (lowerName == "writeln") {
-        emit("std::cout");
-        for (const auto& arg : node.getArguments()) {
-            emit(" << ");
-            
-            // Check if this is a Byte type that needs casting for proper display
-            bool needsCast = false;
-            if (auto identifier = dynamic_cast<IdentifierExpression*>(arg.get())) {
-                if (symbolTable_) {
-                    auto symbol = symbolTable_->lookup(identifier->getName());
-                    if (symbol && symbol->getDataType() == DataType::BYTE) {
-                        needsCast = true;
+        if (node.getArguments().empty()) {
+            // writeln() with no arguments just prints a newline
+            emit("std::cout << std::endl");
+        } else {
+            emit("std::cout");
+            for (const auto& arg : node.getArguments()) {
+                emit(" << ");
+                
+                // Check if this is a Byte type that needs casting for proper display
+                bool needsCast = false;
+                if (auto identifier = dynamic_cast<IdentifierExpression*>(arg.get())) {
+                    if (symbolTable_) {
+                        auto symbol = symbolTable_->lookup(identifier->getName());
+                        if (symbol && symbol->getDataType() == DataType::BYTE) {
+                            needsCast = true;
+                        }
                     }
-                }
-            } else if (auto arrayAccess = dynamic_cast<ArrayIndexExpression*>(arg.get())) {
+                } else if (auto arrayAccess = dynamic_cast<ArrayIndexExpression*>(arg.get())) {
                 // Check if array element type is Byte
                 if (auto arrayIdent = dynamic_cast<IdentifierExpression*>(arrayAccess->getArray())) {
                     if (symbolTable_) {
@@ -1365,7 +1443,60 @@ bool CppGenerator::generateBasicIOCall(CallExpression& node, const std::string& 
                 arg->accept(*this);
             }
         }
-        emit(" << std::endl");
+            // Note: write() does NOT add std::endl like writeln() does
+        }
+        return true;
+    } else if (lowerName == "write") {
+        if (node.getArguments().empty()) {
+            // write() with no arguments does nothing (but is valid)
+            emit("// write() with no arguments");
+        } else {
+            emit("std::cout");
+            for (const auto& arg : node.getArguments()) {
+                emit(" << ");
+                
+                // Check if this is a Byte type that needs casting for proper display
+                bool needsCast = false;
+                if (auto identifier = dynamic_cast<IdentifierExpression*>(arg.get())) {
+                    if (symbolTable_) {
+                        auto symbol = symbolTable_->lookup(identifier->getName());
+                        if (symbol && symbol->getDataType() == DataType::BYTE) {
+                            needsCast = true;
+                        }
+                    }
+                } else if (auto arrayAccess = dynamic_cast<ArrayIndexExpression*>(arg.get())) {
+                // Check if array element type is Byte  
+                if (auto arrayIdent = dynamic_cast<IdentifierExpression*>(arrayAccess->getArray())) {
+                    if (symbolTable_) {
+                        auto symbol = symbolTable_->lookup(arrayIdent->getName());
+                        if (symbol) {
+                            if (symbol->getDataType() == DataType::CUSTOM) {
+                                std::string typeName = symbol->getTypeName();
+                                auto arrayTypeIt = arrayTypes_.find(typeName);
+                                if (arrayTypeIt != arrayTypes_.end()) {
+                                    const ArrayTypeInfo& info = arrayTypeIt->second;
+                                    std::string lowerElementType = info.elementType;
+                                    std::transform(lowerElementType.begin(), lowerElementType.end(), lowerElementType.begin(), 
+                                                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                                    if (lowerElementType == "byte") {
+                                        needsCast = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (needsCast) {
+                emit("static_cast<int>(");
+                arg->accept(*this);
+                emit(")");
+            } else {
+                arg->accept(*this);
+            }
+        }
+        }
         return true;
     } else if (lowerName == "readln") {
         emit("std::cin");
@@ -1711,6 +1842,30 @@ bool CppGenerator::generateSystemFunctionCall(CallExpression& node, const std::s
         }
         emit("])");
         return true;
+    } else if (lowerName == "inc") {
+        // Handle inc(var) and inc(var, amount)
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+            if (node.getArguments().size() > 1) {
+                emit(" += ");
+                node.getArguments()[1]->accept(*this);
+            } else {
+                emit("++");
+            }
+        }
+        return true;
+    } else if (lowerName == "dec") {
+        // Handle dec(var) and dec(var, amount)
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+            if (node.getArguments().size() > 1) {
+                emit(" -= ");
+                node.getArguments()[1]->accept(*this);
+            } else {
+                emit("--");
+            }
+        }
+        return true;
     }
     return false;
 }
@@ -1874,7 +2029,7 @@ bool CppGenerator::isBuiltinFunction(const std::string& name) {
     std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), 
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     
-    return lowerName == "writeln" || lowerName == "readln" || lowerName == "read" || lowerName == "length" || 
+    return lowerName == "writeln" || lowerName == "write" || lowerName == "readln" || lowerName == "read" || lowerName == "length" || 
            lowerName == "chr" || lowerName == "ord" || lowerName == "pos" || lowerName == "copy" ||
            lowerName == "concat" || lowerName == "insert" || lowerName == "delete" ||
            lowerName == "assign" || lowerName == "reset" || lowerName == "rewrite" ||

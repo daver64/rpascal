@@ -114,6 +114,24 @@ std::string SetLiteralExpression::toString() const {
     return oss.str();
 }
 
+// FormattedExpression
+void FormattedExpression::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string FormattedExpression::toString() const {
+    std::ostringstream oss;
+    oss << "FormattedExpression(" << expression_->toString();
+    if (width_) {
+        oss << ":" << width_->toString();
+        if (precision_) {
+            oss << ":" << precision_->toString();
+        }
+    }
+    oss << ")";
+    return oss.str();
+}
+
 // ExpressionStatement
 void ExpressionStatement::accept(ASTVisitor& visitor) {
     visitor.visit(*this);
