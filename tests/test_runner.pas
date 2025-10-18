@@ -9,7 +9,7 @@ begin
   writeln('===================================================');
   writeln('         RPascal Comprehensive Test Suite         ');
   writeln('===================================================');
-  writeln;
+  writeln();
   
   writeln('This test suite covers:');
   writeln('  1. Basic Data Types (integer, real, boolean, char, byte, string)');
@@ -22,12 +22,12 @@ begin
   writeln('  8. File Operations (text files, binary files)');
   writeln('  9. Built-in Functions (math, conversion, system, CRT)');
   writeln(' 10. Integration Tests (complex real-world scenarios)');
-  writeln;
+  writeln();
   
   writeln('===================================================');
   writeln(' Testing Current TP7 Compatibility: 85-90%        ');
   writeln('===================================================');
-  writeln;
+  writeln();
   
   writeln('IMPLEMENTED FEATURES:');
   writeln('  ✓ All basic data types and operations');
@@ -41,7 +41,7 @@ begin
   writeln('  ✓ File I/O operations');
   writeln('  ✓ Nested procedures and local scoping');
   writeln('  ✓ Forward declarations and recursion');
-  writeln;
+  writeln();
   
   writeln('RECENTLY COMPLETED MAJOR FEATURES:');
   writeln('  ✓ Pointer dereferencing (ptr^.field)');
@@ -52,14 +52,14 @@ begin
   writeln('  ✓ Set membership testing');
   writeln('  ✓ String concatenation with + operator');
   writeln('  ✓ Enhanced string library functions');
-  writeln;
+  writeln();
   
   writeln('REMAINING GAPS FOR 95% COMPATIBILITY:');
-  writeln('  ❌ Variant records (case-of in record definitions)');
-  writeln('  ❌ Units and uses system (modular compilation)');
-  writeln('  ❌ Labels and goto statements');
-  writeln('  ❌ Some advanced built-in functions');
-  writeln;
+  writeln('  - Variant records (case-of in record definitions)');
+  writeln('  - Units and uses system (modular compilation)');
+  writeln('  - Labels and goto statements');
+  writeln('  - Some advanced built-in functions');
+  writeln();
   
   writeln('USAGE INSTRUCTIONS:');
   writeln('  To run individual tests, compile and execute:');
@@ -70,7 +70,7 @@ begin
   writeln('    rpascal tests/test_sets.pas');
   writeln('    rpascal tests/enhanced_strings_test.pas');
   writeln('    rpascal tests/turbo_pascal_7_compatibility.pas');
-  writeln;
+  writeln();
   
   writeln('EXPECTED RESULTS:');
   writeln('  ✓ test_basic_types.pas - All data type operations work');
@@ -80,20 +80,20 @@ begin
   writeln('  ✓ test_sets.pas - All set operations work');
   writeln('  ✓ enhanced_strings_test.pas - Enhanced string library works');
   writeln('  ⚠ turbo_pascal_7_compatibility.pas - Some features may fail (variant records, etc.)');
-  writeln;
+  writeln();
   
   writeln('===================================================');
   writeln(' RPascal: Modern Pascal with Excellent TP7 Support');
   writeln('===================================================');
-  writeln;
+  writeln();
   
   writeln('Perfect for:');
-  writeln('  • Educational Pascal programming');
-  writeln('  • Legacy TP7 code migration');
-  writeln('  • Cross-platform Pascal development');
-  writeln('  • Algorithm implementation and data structures');
-  writeln('  • Console applications and mathematical computing');
-  writeln;
+  writeln('  * Educational Pascal programming');
+  writeln('  * Legacy TP7 code migration');
+  writeln('  * Cross-platform Pascal development');
+  writeln('  * Algorithm implementation and data structures');
+  writeln('  * Console applications and mathematical computing');
+  writeln();
   
   writeln('Run individual test files to verify specific functionality!');
 end.

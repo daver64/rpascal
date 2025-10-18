@@ -114,6 +114,15 @@ std::string SetLiteralExpression::toString() const {
     return oss.str();
 }
 
+// RangeExpression
+void RangeExpression::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string RangeExpression::toString() const {
+    return "RangeExpression(" + start_->toString() + ".." + end_->toString() + ")";
+}
+
 // FormattedExpression
 void FormattedExpression::accept(ASTVisitor& visitor) {
     visitor.visit(*this);
@@ -264,6 +273,24 @@ void GotoStatement::accept(ASTVisitor& visitor) {
 
 std::string GotoStatement::toString() const {
     return "GotoStatement(goto " + target_ + ")";
+}
+
+// BreakStatement
+void BreakStatement::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string BreakStatement::toString() const {
+    return "BreakStatement(break)";
+}
+
+// ContinueStatement
+void ContinueStatement::accept(ASTVisitor& visitor) {
+    visitor.visit(*this);
+}
+
+std::string ContinueStatement::toString() const {
+    return "ContinueStatement(continue)";
 }
 
 // ConstantDeclaration

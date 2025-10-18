@@ -31,6 +31,8 @@ const std::unordered_map<std::string, TokenType> Keywords::keywords_ = {
     {"with", TokenType::WITH},
     {"goto", TokenType::GOTO},
     {"label", TokenType::LABEL},
+    {"break", TokenType::BREAK},
+    {"continue", TokenType::CONTINUE},
     {"record", TokenType::RECORD},
     {"array", TokenType::ARRAY},
     {"set", TokenType::SET},
@@ -121,6 +123,8 @@ std::string Token::tokenTypeToString(TokenType type) {
         case TokenType::WITH: return "WITH";
         case TokenType::GOTO: return "GOTO";
         case TokenType::LABEL: return "LABEL";
+        case TokenType::BREAK: return "BREAK";
+        case TokenType::CONTINUE: return "CONTINUE";
         case TokenType::RECORD: return "RECORD";
         case TokenType::ARRAY: return "ARRAY";
         case TokenType::SET: return "SET";

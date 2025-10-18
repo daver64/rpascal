@@ -41,6 +41,9 @@ var
   current: ^TNode;
   temp: ^TNode;
   
+  { Person list variables }
+  currentPerson: ^TPerson;
+  
   { Loop variables }
   i: integer;
 
@@ -78,7 +81,7 @@ begin
   
   writeln('nodePtr^.data = ', nodePtr^.data);
   writeln('nodePtr^.next = nil: ', nodePtr^.next = nil);
-  writeln;
+  writeln();
   
   { === CHAINED FIELD ACCESS === }
   writeln('--- Chained Field Access ---');
@@ -95,7 +98,7 @@ begin
   writeln('head^.data = ', head^.data);
   writeln('head^.next^.data = ', head^.next^.data);
   writeln('head^.next^.next = nil: ', head^.next^.next = nil);
-  writeln;
+  writeln();
   
   { === POINTER ARITHMETIC === }
   writeln('--- Pointer Arithmetic ---');
@@ -108,7 +111,7 @@ begin
   writeln('Array contents:');
   for i := 1 to 10 do
     write(numbers[i], ' ');
-  writeln;
+  writeln();
   
   { Test inc and dec operations on pointers }
   new(temp);
@@ -150,7 +153,7 @@ begin
     else
       writeln('  Step ', i, ': current is nil');
   end;
-  writeln;
+  writeln();
   
   { === LINKED LIST OPERATIONS === }
   writeln('--- Linked List Operations ---');
@@ -175,7 +178,7 @@ begin
     write(current^.data, ' ');
     current := current^.next;
   end;
-  writeln;
+  writeln();
   
   { Count nodes in the list }
   current := head;
@@ -186,7 +189,7 @@ begin
     current := current^.next;
   end;
   writeln('List contains ', i, ' nodes');
-  writeln;
+  writeln();
   
   { === COMPLEX POINTER OPERATIONS === }
   writeln('--- Complex Pointer Operations ---');
@@ -206,23 +209,23 @@ begin
   personPtr^.next^.next^.next := nil;
   
   writeln('Person list:');
-  current := personPtr;
-  while current <> nil do
+  currentPerson := personPtr;
+  while currentPerson <> nil do
   begin
-    writeln('  Name: ', current^.name, ', Age: ', current^.age);
-    current := current^.next;
+    writeln('  Name: ', currentPerson^.name, ', Age: ', currentPerson^.age);
+    currentPerson := currentPerson^.next;
   end;
   
   { Test finding a person in the list }
-  current := personPtr;
-  while (current <> nil) and (current^.name <> 'Bob') do
-    current := current^.next;
+  currentPerson := personPtr;
+  while (currentPerson <> nil) and (currentPerson^.name <> 'Bob') do
+    currentPerson := currentPerson^.next;
   
-  if current <> nil then
-    writeln('Found Bob, age: ', current^.age)
+  if currentPerson <> nil then
+    writeln('Found Bob, age: ', currentPerson^.age)
   else
     writeln('Bob not found');
-  writeln;
+  writeln();
   
   { === POINTER COMPARISONS === }
   writeln('--- Pointer Comparisons ---');
@@ -240,7 +243,7 @@ begin
   writeln('current = head: ', current = head);
   writeln('current <> head: ', current <> head);
   writeln('current = nil: ', current = nil);
-  writeln;
+  writeln();
   
   { === MEMORY CLEANUP === }
   writeln('--- Memory Cleanup ---');
@@ -257,9 +260,9 @@ begin
   { Clean up the person list }
   while personPtr <> nil do
   begin
-    current := personPtr;
+    currentPerson := personPtr;
     personPtr := personPtr^.next;
-    dispose(current);
+    dispose(currentPerson);
   end;
   writeln('Person list cleaned up');
   
@@ -269,6 +272,6 @@ begin
   dispose(nodePtr);
   writeln('Individual pointers cleaned up');
   
-  writeln;
+  writeln();
   writeln('=== All Pointer Tests Completed Successfully ===');
 end.

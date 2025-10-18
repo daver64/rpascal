@@ -39,6 +39,8 @@ enum class TokenType {
     WITH,
     GOTO,
     LABEL,
+    BREAK,
+    CONTINUE,
     RECORD,
     ARRAY,
     SET,

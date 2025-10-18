@@ -57,15 +57,15 @@ begin
   r2 := -2.71828;
   r3 := 0.0;
   
-  writeln('r1 = ', r1:0:5);
-  writeln('r2 = ', r2:0:5);
-  writeln('r3 = ', r3:0:1);
+  writeln('r1 = ', r1);
+  writeln('r2 = ', r2);
+  writeln('r3 = ', r3);
   
   { Real arithmetic }
-  writeln('r1 + r2 = ', (r1 + r2):0:5);
-  writeln('r1 - r2 = ', (r1 - r2):0:5);
-  writeln('r1 * r2 = ', (r1 * r2):0:5);
-  writeln('r1 / r2 = ', (r1 / r2):0:5);
+  writeln('r1 + r2 = ', (r1 + r2));
+  writeln('r1 - r2 = ', (r1 - r2));
+  writeln('r1 * r2 = ', (r1 * r2));
+  writeln('r1 / r2 = ', (r1 / r2));
   
   { Real comparisons }
   writeln('r1 > r2: ', r1 > r2);

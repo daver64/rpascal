@@ -43,6 +43,7 @@ public:
     void visit(FieldAccessExpression& node) override;
     void visit(ArrayIndexExpression& node) override;
     void visit(SetLiteralExpression& node) override;
+    void visit(RangeExpression& node) override;
     void visit(FormattedExpression& node) override;
     
     void visit(ExpressionStatement& node) override;
@@ -56,6 +57,8 @@ public:
     void visit(WithStatement& node) override;
     void visit(LabelStatement& node) override;
     void visit(GotoStatement& node) override;
+    void visit(BreakStatement& node) override;
+    void visit(ContinueStatement& node) override;
     
     void visit(ConstantDeclaration& node) override;
     void visit(LabelDeclaration& node) override;
@@ -94,6 +97,7 @@ private:
     
     // Helper methods
     void addError(const std::string& message);
+    void addError(const std::string& message, const SourceLocation& location);
     DataType getExpressionType(Expression* expr);
     bool areTypesCompatible(DataType left, DataType right, const std::string& leftTypeName = "", const std::string& rightTypeName = "");
     bool areArgumentTypesCompatible(DataType expectedType, DataType actualType, Expression* actualExpr);

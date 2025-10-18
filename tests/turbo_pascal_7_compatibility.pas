@@ -80,7 +80,7 @@ var
   x, y, z: real;
   flag, done: boolean;
   ch: char;
-  str: string;
+  testStr: string;
   
   { Custom types }
   color: TColor;
@@ -111,22 +111,23 @@ var
 procedure TestProcedure(x: integer); forward;
 function TestFunction(a, b: integer): integer; forward;
 
-{ === NESTED PROCEDURES/FUNCTIONS === }
+{ === PROCEDURE SCOPING TEST === }
+{ Note: Nested procedures are not supported in RPascal - use global procedures with parameters instead }
+{ Helper procedure - demonstrates refactoring from nested procedure }
+procedure InnerProcedureHelper(localVar: integer);
+var
+  innerVar: integer;
+begin
+  innerVar := localVar + 1;
+  writeln('Inner: ', innerVar);
+end;
+
 procedure OuterProcedure;
 var
   localVar: integer;
-  
-  procedure InnerProcedure;
-  var
-    innerVar: integer;
-  begin
-    innerVar := localVar + 1;
-        writeln('Inner: ', innerVar);
-  end;
-  
 begin
   localVar := 10;
-  InnerProcedure;
+  InnerProcedureHelper(localVar);
 end;
 
 { === PARAMETER PASSING TESTS === }

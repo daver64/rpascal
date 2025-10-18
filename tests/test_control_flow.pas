@@ -51,7 +51,7 @@ begin
   
   if not (i = j) then
     writeln('i and j are not equal');
-  writeln;
+  writeln();
   
   { === WHILE-DO TESTS === }
   writeln('--- While-Do Tests ---');
@@ -64,7 +64,7 @@ begin
     write(count, ' ');
     count := count + 1;
   end;
-  writeln;
+  writeln();
   
   { While with boolean condition }
   done := false;
@@ -77,8 +77,8 @@ begin
     if i >= 100 then
       done := true;
   end;
-  writeln;
-  writeln;
+  writeln();
+  writeln();
   
   { === FOR-TO/DOWNTO TESTS === }
   writeln('--- For-To/Downto Tests ---');
@@ -87,25 +87,25 @@ begin
   writeln('For i := 1 to 5:');
   for i := 1 to 5 do
     write(i, ' ');
-  writeln;
+  writeln();
   
   { Basic for-downto loop }
   writeln('For i := 5 downto 1:');
   for i := 5 downto 1 do
     write(i, ' ');
-  writeln;
+  writeln();
   
   { For loop with enumeration }
   writeln('For grade := A to F:');
   for grade := A to F do
     write(ord(grade), ' ');
-  writeln;
+  writeln();
   
   { For loop with character range }
   writeln('For ch := ''A'' to ''E'':');
   for ch := 'A' to 'E' do
     write(ch, ' ');
-  writeln;
+  writeln();
   
   { Nested for loops }
   writeln('Multiplication table (3x3):');
@@ -113,9 +113,9 @@ begin
   begin
     for j := 1 to 3 do
       write(i * j:3);
-    writeln;
+    writeln();
   end;
-  writeln;
+  writeln();
   
   { === REPEAT-UNTIL TESTS === }
   writeln('--- Repeat-Until Tests ---');
@@ -127,7 +127,7 @@ begin
     write(i, ' ');
     i := i + 1;
   until i > 5;
-  writeln;
+  writeln();
   
   { Repeat-until with complex condition }
   i := 2;
@@ -136,8 +136,8 @@ begin
     write(i, ' ');
     i := i * 2;
   until (i > 50) or (i < 0);  { Test for overflow }
-  writeln;
-  writeln;
+  writeln();
+  writeln();
   
   { === CASE STATEMENT TESTS === }
   writeln('--- Case Statement Tests ---');
@@ -187,7 +187,7 @@ begin
   else
     writeln('outside range 1-30');
   end;
-  writeln;
+  writeln();
   
   { === COMPLEX CONTROL FLOW === }
   writeln('--- Complex Control Flow ---');
@@ -222,7 +222,7 @@ begin
           4: writeln(' (middle even)');
           6: writeln(' (largest even)');
         else
-          writeln;
+          writeln();
         end;
       end
       else
@@ -231,6 +231,6 @@ begin
     end;
   end;
   
-  writeln;
+  writeln();
   writeln('=== All Control Flow Tests Completed Successfully ===');
 end.

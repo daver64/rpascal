@@ -225,6 +225,12 @@ DataType SymbolTable::stringToDataType(const std::string& typeStr) {
     if (lowerType == "char") return DataType::CHAR;
     if (lowerType == "byte") return DataType::BYTE;
     if (lowerType == "string") return DataType::STRING;
+    
+    // Handle bounded strings: string[N]
+    if (lowerType.find("string[") == 0 && lowerType.back() == ']') {
+        return DataType::STRING;
+    }
+    
     if (lowerType == "void") return DataType::VOID;
     if (lowerType == "text") return DataType::FILE_TYPE;
     

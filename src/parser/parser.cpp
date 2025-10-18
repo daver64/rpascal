@@ -459,11 +459,23 @@ std::unique_ptr<ProcedureDeclaration> Parser::parseProcedureDeclaration(bool isI
         return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(nestedDeclarations), std::move(body), true, isOverloaded);
     }
     
+    // Parse label declarations (optional label section)
+    std::vector<std::unique_ptr<Declaration>> labelDeclarations;
+    if (match(TokenType::LABEL)) {
+        auto labelDecl = parseLabelDeclaration();
+        labelDeclarations.push_back(std::move(labelDecl));
+    }
+    
     // Parse local variables (optional var section)
     auto localVariables = parseLocalVariables();
     
     // Parse nested procedures and functions
     auto nestedDeclarations = parseNestedDeclarations();
+    
+    // Combine label declarations with nested declarations
+    for (auto& labelDecl : labelDeclarations) {
+        nestedDeclarations.push_back(std::move(labelDecl));
+    }
     
     auto body = parseCompoundStatement();
     consume(TokenType::SEMICOLON, "Expected ';' after procedure body");
@@ -539,6 +551,10 @@ std::unique_ptr<Statement> Parser::parseStatement() {
             return parseWithStatement();
         } else if (match(TokenType::GOTO)) {
             return parseGotoStatement();
+        } else if (match(TokenType::BREAK)) {
+            return std::make_unique<BreakStatement>();
+        } else if (match(TokenType::CONTINUE)) {
+            return std::make_unique<ContinueStatement>();
         } else if (check(TokenType::INTEGER_LITERAL)) {
             // Check if this is a label (number followed by colon)
             Token labelToken = currentToken_;
@@ -584,20 +600,44 @@ std::unique_ptr<Statement> Parser::parseStatement() {
             } else {
                 // Not a label, check if it's a procedure call
                 if (match(TokenType::LEFT_PAREN)) {
-                    // This is a procedure call
-                    std::vector<std::unique_ptr<Expression>> arguments;
-                    if (!check(TokenType::RIGHT_PAREN)) {
-                        do {
-                            arguments.push_back(parseExpression());
-                        } while (match(TokenType::COMMA));
-                    }
+                    // This is a procedure call - use parseArgumentList for format specifier support
+                    auto arguments = parseArgumentList();
                     consume(TokenType::RIGHT_PAREN, "Expected ')' after procedure arguments");
                     auto callee = std::make_unique<IdentifierExpression>(labelToken.getValue());
                     auto callExpr = std::make_unique<CallExpression>(std::move(callee), std::move(arguments));
                     return std::make_unique<ExpressionStatement>(std::move(callExpr));
                 } else {
-                    // Not a procedure call, backtrack by creating an identifier expression
-                    auto expr = std::make_unique<IdentifierExpression>(labelToken.getValue());
+                    // Not a procedure call, create identifier expression and handle postfix operations
+                    std::unique_ptr<Expression> expr = std::make_unique<IdentifierExpression>(labelToken.getValue());
+                    
+                    // Handle postfix operations like ^, [index], .field
+                    while (true) {
+                        if (check(TokenType::CARET)) {
+                            Token caretToken = currentToken_;
+                            advance(); // consume '^'
+                            auto derefExpr = std::make_unique<DereferenceExpression>(std::move(expr));
+                            derefExpr->setLocation(caretToken.getLocation());
+                            expr = std::move(derefExpr);
+                        } else if (check(TokenType::LEFT_BRACKET)) {
+                            advance(); // consume '['
+                            std::vector<std::unique_ptr<Expression>> indices;
+                            do {
+                                indices.push_back(parseExpression());
+                            } while (match(TokenType::COMMA));
+                            consume(TokenType::RIGHT_BRACKET, "Expected ']' after array index");
+                            expr = std::make_unique<ArrayIndexExpression>(std::move(expr), std::move(indices));
+                        } else if (check(TokenType::PERIOD)) {
+                            Token periodToken = currentToken_;
+                            advance(); // consume '.'
+                            Token fieldToken = consume(TokenType::IDENTIFIER, "Expected field name after '.'");
+                            auto fieldAccessExpr = std::make_unique<FieldAccessExpression>(std::move(expr), fieldToken.getValue());
+                            fieldAccessExpr->setLocation(periodToken.getLocation());
+                            expr = std::move(fieldAccessExpr);
+                        } else {
+                            break; // No more postfix operations
+                        }
+                    }
+                    
                     if (match(TokenType::ASSIGN)) {
                         auto value = parseExpression();
                         return std::make_unique<AssignmentStatement>(std::move(expr), std::move(value));
@@ -900,7 +940,9 @@ std::unique_ptr<Expression> Parser::parseMultiplicativeExpression() {
         Token op = currentToken_;
         advance();
         auto right = parseUnaryExpression();
-        expr = std::make_unique<BinaryExpression>(std::move(expr), op, std::move(right));
+        auto binaryExpr = std::make_unique<BinaryExpression>(std::move(expr), op, std::move(right));
+        binaryExpr->setLocation(op.getLocation());
+        expr = std::move(binaryExpr);
     }
     
     return expr;
@@ -935,7 +977,9 @@ std::unique_ptr<Expression> Parser::parsePrimaryExpression() {
     if (check(TokenType::IDENTIFIER)) {
         Token nameToken = currentToken_;
         advance();
-        std::unique_ptr<Expression> expr = std::make_unique<IdentifierExpression>(nameToken.getValue());
+        auto identExpr = std::make_unique<IdentifierExpression>(nameToken.getValue());
+        identExpr->setLocation(nameToken.getLocation());
+        std::unique_ptr<Expression> expr = std::move(identExpr);
         
         // Handle postfix operations (function calls, field access, array indexing)
         while (true) {
@@ -947,9 +991,12 @@ std::unique_ptr<Expression> Parser::parsePrimaryExpression() {
                 expr = std::make_unique<CallExpression>(std::move(expr), std::move(args));
             } else if (check(TokenType::PERIOD)) {
                 // Field access
+                Token periodToken = currentToken_;
                 advance(); // consume '.'
                 Token fieldToken = consume(TokenType::IDENTIFIER, "Expected field name after '.'");
-                expr = std::make_unique<FieldAccessExpression>(std::move(expr), fieldToken.getValue());
+                auto fieldAccessExpr = std::make_unique<FieldAccessExpression>(std::move(expr), fieldToken.getValue());
+                fieldAccessExpr->setLocation(periodToken.getLocation());
+                expr = std::move(fieldAccessExpr);
             } else if (check(TokenType::LEFT_BRACKET)) {
                 // Array indexing - handle multiple dimensions
                 advance(); // consume '['
@@ -967,8 +1014,11 @@ std::unique_ptr<Expression> Parser::parsePrimaryExpression() {
                 expr = std::make_unique<ArrayIndexExpression>(std::move(expr), std::move(indices));
             } else if (check(TokenType::CARET)) {
                 // Pointer dereference (postfix)
+                Token caretToken = currentToken_;
                 advance(); // consume '^'
-                expr = std::make_unique<DereferenceExpression>(std::move(expr));
+                auto derefExpr = std::make_unique<DereferenceExpression>(std::move(expr));
+                derefExpr->setLocation(caretToken.getLocation());
+                expr = std::move(derefExpr);
             } else {
                 break; // No more postfix operations
             }
@@ -990,10 +1040,29 @@ std::unique_ptr<Expression> Parser::parsePrimaryExpression() {
         std::vector<std::unique_ptr<Expression>> elements;
         
         if (!check(TokenType::RIGHT_BRACKET)) {
-            elements.push_back(parseExpression());
+            // Parse first element, which might be part of a range
+            auto firstExpr = parseExpression();
+            
+            // Check if this is a range expression (e.g., 0..9)
+            if (check(TokenType::RANGE)) {
+                advance(); // consume '..'
+                auto endExpr = parseExpression();
+                elements.push_back(std::make_unique<RangeExpression>(std::move(firstExpr), std::move(endExpr)));
+            } else {
+                elements.push_back(std::move(firstExpr));
+            }
             
             while (match(TokenType::COMMA)) {
-                elements.push_back(parseExpression());
+                // Parse next element, which might also be part of a range
+                auto nextExpr = parseExpression();
+                
+                if (check(TokenType::RANGE)) {
+                    advance(); // consume '..'
+                    auto endExpr = parseExpression();
+                    elements.push_back(std::make_unique<RangeExpression>(std::move(nextExpr), std::move(endExpr)));
+                } else {
+                    elements.push_back(std::move(nextExpr));
+                }
             }
         }
         
@@ -1271,12 +1340,14 @@ std::vector<std::unique_ptr<Expression>> Parser::parseArgumentList() {
             auto expr = parseExpression();
             
             // Check for format specifiers (Pascal: expr:width:precision)
-            if (match(TokenType::COLON)) {
+            if (check(TokenType::COLON)) {
+                advance(); // consume the colon
                 auto width = parseExpression();
                 std::unique_ptr<Expression> precision = nullptr;
                 
                 // Optional precision specifier
-                if (match(TokenType::COLON)) {
+                if (check(TokenType::COLON)) {
+                    advance(); // consume the second colon
                     precision = parseExpression();
                 }
                 

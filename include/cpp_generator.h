@@ -33,6 +33,7 @@ public:
     void visit(FieldAccessExpression& node) override;
     void visit(ArrayIndexExpression& node) override;
     void visit(SetLiteralExpression& node) override;
+    void visit(RangeExpression& node) override;
     void visit(FormattedExpression& node) override;
     
     void visit(ExpressionStatement& node) override;
@@ -46,6 +47,8 @@ public:
     void visit(WithStatement& node) override;
     void visit(LabelStatement& node) override;
     void visit(GotoStatement& node) override;
+    void visit(BreakStatement& node) override;
+    void visit(ContinueStatement& node) override;
     
     void visit(ConstantDeclaration& node) override;
     void visit(LabelDeclaration& node) override;
@@ -115,6 +118,7 @@ private:
     void generateBoundedStringDefinition(const std::string& typeName, const std::string& definition);
     void generateRangeDefinition(const std::string& typeName, const std::string& definition);
     void generateEnumDefinition(const std::string& typeName, const std::string& definition);
+    void generateFileDefinition(const std::string& typeName, const std::string& definition);
     
     // Expression and statement helpers
     void generateExpression(Expression* expr);
@@ -145,6 +149,7 @@ private:
     bool isStringExpression(Expression* expr);
     bool needsCharToStringConversion(AssignmentStatement& node);
     std::string escapeCppString(const std::string& str);
+    std::vector<std::string> expandEnumRange(const std::string& startName, const std::string& endName);
 };
 
 } // namespace rpascal

@@ -159,21 +159,102 @@ void CppGenerator::visit(BinaryExpression& node) {
     TokenType op = node.getOperator().getType();
     if (op == TokenType::PLUS || op == TokenType::MULTIPLY || op == TokenType::MINUS) {
         // Check if we're dealing with sets by looking for set types
-        // This is a simplified check - in a full implementation we'd have proper type analysis
-        
-        // For now, assume if we see set literals or set variables, we're doing set operations
         bool mightBeSetOperation = false;
         
-        // Check if operands look like set operations (very basic heuristic)
-        // In a proper implementation, we'd have type information available
+        // Helper function to check if an expression might be a set
+        auto isSetExpression = [this](Expression* expr) -> bool {
+            // Check for set literals
+            if (dynamic_cast<SetLiteralExpression*>(expr)) {
+                return true;
+            }
+            
+            // Check for set variables
+            if (auto identExpr = dynamic_cast<IdentifierExpression*>(expr)) {
+                auto symbol = symbolTable_->lookup(identExpr->getName());
+                if (symbol && symbol->getDataType() == DataType::CUSTOM) {
+                    std::string typeName = symbol->getTypeName();
+                    if (typeName.find("Set") != std::string::npos || typeName.find("set") != std::string::npos) {
+                        return true;
+                    }
+                }
+            }
+            
+            // Check for nested binary expressions that might be set operations
+            if (auto binExpr = dynamic_cast<BinaryExpression*>(expr)) {
+                TokenType binOp = binExpr->getOperator().getType();
+                if (binOp == TokenType::PLUS || binOp == TokenType::MULTIPLY || binOp == TokenType::MINUS) {
+                    // If it's a set operation, the result is also a set
+                    return true;
+                }
+            }
+            
+            return false;
+        };
+        
+        // Check if either operand is a set expression
+        if (isSetExpression(node.getLeft()) || isSetExpression(node.getRight())) {
+            mightBeSetOperation = true;
+        }
+        
+        if (mightBeSetOperation) {
+            // Generate set operations using simpler C++ approach
+            if (op == TokenType::PLUS) {
+                // Set union: use std::set_union algorithm
+                emit("([&](){ auto left = ");
+                node.getLeft()->accept(*this);
+                emit("; auto right = ");
+                node.getRight()->accept(*this);
+                emit("; std::remove_reference_t<decltype(left)> result; std::set_union(left.begin(), left.end(), right.begin(), right.end(), std::inserter(result, result.end())); return result; })()");
+                return;
+            } else if (op == TokenType::MULTIPLY) {
+                // Set intersection: use std::set_intersection algorithm
+                emit("([&](){ auto left = ");
+                node.getLeft()->accept(*this);
+                emit("; auto right = ");
+                node.getRight()->accept(*this);
+                emit("; std::remove_reference_t<decltype(left)> result; std::set_intersection(left.begin(), left.end(), right.begin(), right.end(), std::inserter(result, result.end())); return result; })()");
+                return;
+            } else if (op == TokenType::MINUS) {
+                // Set difference: use std::set_difference algorithm
+                emit("([&](){ ");
+                
+                // For set literals, we need to wrap them with std::set constructor
+                if (dynamic_cast<SetLiteralExpression*>(node.getLeft())) {
+                    emit("std::set<char> left");
+                    node.getLeft()->accept(*this);
+                } else {
+                    emit("auto left = ");
+                    node.getLeft()->accept(*this);
+                }
+                
+                emit("; ");
+                
+                if (dynamic_cast<SetLiteralExpression*>(node.getRight())) {
+                    emit("std::set<char> right");
+                    node.getRight()->accept(*this);
+                } else {
+                    emit("auto right = ");
+                    node.getRight()->accept(*this);
+                }
+                
+                emit("; std::remove_reference_t<decltype(left)> result; std::set_difference(left.begin(), left.end(), right.begin(), right.end(), std::inserter(result, result.end())); return result; })()");
+                return;
+            }
+        }
+    }
+    
+    // Handle set comparisons (== and !=)
+    if (node.getOperator().getType() == TokenType::EQUAL || node.getOperator().getType() == TokenType::NOT_EQUAL) {
+        // Check if we're comparing sets
+        bool mightBeSetComparison = false;
+        
+        // Check if operands look like set operations (similar to above heuristic)
         if (auto leftIdent = dynamic_cast<IdentifierExpression*>(node.getLeft())) {
-            // Look up symbol type - if it's a set type, this is a set operation
             auto symbol = symbolTable_->lookup(leftIdent->getName());
             if (symbol && symbol->getDataType() == DataType::CUSTOM) {
-                // Check if it's a set type by looking at type name
                 std::string typeName = symbol->getTypeName();
                 if (typeName.find("Set") != std::string::npos || typeName.find("set") != std::string::npos) {
-                    mightBeSetOperation = true;
+                    mightBeSetComparison = true;
                 }
             }
         }
@@ -181,36 +262,23 @@ void CppGenerator::visit(BinaryExpression& node) {
         // Also check for set literals
         if (dynamic_cast<SetLiteralExpression*>(node.getLeft()) || 
             dynamic_cast<SetLiteralExpression*>(node.getRight())) {
-            mightBeSetOperation = true;
+            mightBeSetComparison = true;
         }
         
-        if (mightBeSetOperation) {
-            // Generate set operations using simpler C++ approach
-            if (op == TokenType::PLUS) {
-                // Set union: create result, insert from both sets
-                emit("([&](){ auto result = ");
-                node.getLeft()->accept(*this);
-                emit("; auto right_set = ");
+        if (mightBeSetComparison) {
+            emit("(");
+            node.getLeft()->accept(*this);
+            emit(" " + mapPascalOperatorToCpp(node.getOperator().getType()) + " ");
+            
+            // If right side is a set literal, we need to wrap it in a set constructor
+            if (dynamic_cast<SetLiteralExpression*>(node.getRight())) {
+                emit("std::set<int>");
+                node.getRight()->accept(*this);  // This will emit the {...} part
+            } else {
                 node.getRight()->accept(*this);
-                emit("; result.insert(right_set.begin(), right_set.end()); return result; })()");
-                return;
-            } else if (op == TokenType::MULTIPLY) {
-                // Set intersection: iterate and find common elements
-                emit("([&](){ auto left_set = ");
-                node.getLeft()->accept(*this);
-                emit("; auto right_set = ");
-                node.getRight()->accept(*this);
-                emit("; std::remove_reference_t<decltype(left_set)> result; for (const auto& elem : left_set) { if (right_set.count(elem)) result.insert(elem); } return result; })()");
-                return;
-            } else if (op == TokenType::MINUS) {
-                // Set difference: remove elements that are in right set
-                emit("([&](){ auto result = ");
-                node.getLeft()->accept(*this);
-                emit("; auto right_set = ");
-                node.getRight()->accept(*this);
-                emit("; for (const auto& elem : right_set) { result.erase(elem); } return result; })()");
-                return;
             }
+            emit(")");
+            return;
         }
     }
     
@@ -431,11 +499,195 @@ void CppGenerator::visit(SetLiteralExpression& node) {
     // We'll use brace initialization which can be converted to the target type
     emit("{");
     const auto& elements = node.getElements();
-    for (size_t i = 0; i < elements.size(); ++i) {
-        if (i > 0) emit(", ");
-        elements[i]->accept(*this);
+    bool first = true;
+    
+    for (const auto& element : elements) {
+        // Check if this element is a range expression that needs expansion
+        if (auto rangeExpr = dynamic_cast<RangeExpression*>(element.get())) {
+            // For ranges like 0..9 or 'a'..'z', we need to expand them
+            // For simplicity, we'll generate code that works for integer ranges
+            // A full implementation would handle char ranges and enum ranges too
+            
+            // Expand integer ranges at compile time
+            // Try to get literal values for start and end
+            auto startLit = dynamic_cast<const LiteralExpression*>(rangeExpr->getStart());
+            auto endLit = dynamic_cast<const LiteralExpression*>(rangeExpr->getEnd());
+            
+            if (startLit && endLit) {
+                // Check if these are integer literals
+                std::string startStr = startLit->getToken().getValue();
+                std::string endStr = endLit->getToken().getValue();
+                
+                // Try to parse as integers - if it fails, check for character literals
+                bool isIntegerRange = true;
+                int startVal = 0, endVal = 0;
+                try {
+                    startVal = std::stoi(startStr);
+                    endVal = std::stoi(endStr);
+                } catch (const std::exception&) {
+                    isIntegerRange = false;
+                }
+                
+                if (isIntegerRange) {
+                    // Expand the integer range
+                    for (int i = startVal; i <= endVal; ++i) {
+                        if (!first) emit(", ");
+                        emit(std::to_string(i));
+                        first = false;
+                    }
+                } else if (startStr.length() == 3 && startStr[0] == '\'' && startStr[2] == '\'' &&
+                          endStr.length() == 3 && endStr[0] == '\'' && endStr[2] == '\'') {
+                    // Character range like 'a'..'z'
+                    char startChar = startStr[1];
+                    char endChar = endStr[1];
+                    for (char c = startChar; c <= endChar; ++c) {
+                        if (!first) emit(", ");
+                        emit("'");
+                        emit(std::string(1, c));
+                        emit("'");
+                        first = false;
+                    }
+                } else if (startStr.length() == 1 && endStr.length() == 1 &&
+                          std::isalpha(startStr[0]) && std::isalpha(endStr[0])) {
+                    // Single character tokens (without quotes) - assume they're characters
+                    char startChar = startStr[0];
+                    char endChar = endStr[0];
+                    for (char c = startChar; c <= endChar; ++c) {
+                        if (!first) emit(", ");
+                        emit("'");
+                        emit(std::string(1, c));
+                        emit("'");
+                        first = false;
+                    }
+                } else {
+                    // For enum ranges, we need to expand based on enum definition
+                    std::vector<std::string> enumValues = expandEnumRange(startStr, endStr);
+                    if (!enumValues.empty()) {
+                        for (size_t i = 0; i < enumValues.size(); ++i) {
+                            if (!first) emit(", ");
+                            // Cast enum values to int for set compatibility
+                            emit("static_cast<int>(");
+                            emit(enumValues[i]);
+                            emit(")");
+                            first = false;
+                        }
+                    } else {
+                        // Fallback: cast enum values to int
+                        if (!first) emit(", ");
+                        emit("static_cast<int>(");
+                        emit(startStr);
+                        emit("), static_cast<int>(");
+                        emit(endStr);
+                        emit(")");
+                        first = false;
+                    }
+                }
+            } else {
+                // Try to get identifier names for enum range expansion
+                auto startIdent = dynamic_cast<const IdentifierExpression*>(rangeExpr->getStart());
+                auto endIdent = dynamic_cast<const IdentifierExpression*>(rangeExpr->getEnd());
+                
+                if (startIdent && endIdent) {
+                    std::string startName = startIdent->getName();
+                    std::string endName = endIdent->getName();
+                    
+                    // Try enum range expansion
+                    std::vector<std::string> enumValues = expandEnumRange(startName, endName);
+                    if (!enumValues.empty()) {
+                        for (size_t i = 0; i < enumValues.size(); ++i) {
+                            if (!first) emit(", ");
+                            emit("static_cast<int>(");
+                            emit(enumValues[i]);
+                            emit(")");
+                            first = false;
+                        }
+                    } else {
+                        // Fallback: emit start and end with proper enum casting
+                        if (!first) emit(", ");
+                        
+                        // Cast enum constants to int for set compatibility
+                        if (startIdent && symbolTable_) {
+                            auto symbol = symbolTable_->lookup(startIdent->getName());
+                            if (symbol && symbol->getSymbolType() == SymbolType::CONSTANT && 
+                                symbol->getDataType() == DataType::CUSTOM) {
+                                emit("static_cast<int>(");
+                                const_cast<Expression*>(rangeExpr->getStart())->accept(*this);
+                                emit(")");
+                            } else {
+                                const_cast<Expression*>(rangeExpr->getStart())->accept(*this);
+                            }
+                        } else {
+                            const_cast<Expression*>(rangeExpr->getStart())->accept(*this);
+                        }
+                        
+                        emit(", ");
+                        
+                        if (endIdent && symbolTable_) {
+                            auto symbol = symbolTable_->lookup(endIdent->getName());
+                            if (symbol && symbol->getSymbolType() == SymbolType::CONSTANT && 
+                                symbol->getDataType() == DataType::CUSTOM) {
+                                emit("static_cast<int>(");
+                                const_cast<Expression*>(rangeExpr->getEnd())->accept(*this);
+                                emit(")");
+                            } else {
+                                const_cast<Expression*>(rangeExpr->getEnd())->accept(*this);
+                            }
+                        } else {
+                            const_cast<Expression*>(rangeExpr->getEnd())->accept(*this);
+                        }
+                        
+                        first = false;
+                    }
+                } else {
+                    // Not identifier expressions, use original fallback
+                    if (!first) emit(", ");
+                    const_cast<Expression*>(rangeExpr->getStart())->accept(*this);
+                    emit(", ");
+                    const_cast<Expression*>(rangeExpr->getEnd())->accept(*this);
+                    first = false;
+                }
+            }
+            
+            first = false;
+        } else {
+            if (!first) emit(", ");
+            
+            // Check if this element is an enum constant that needs casting to int
+            if (auto identExpr = dynamic_cast<IdentifierExpression*>(element.get())) {
+                std::string elemName = identExpr->getName();
+                if (symbolTable_) {
+                    auto symbol = symbolTable_->lookup(elemName);
+                    if (symbol && symbol->getSymbolType() == SymbolType::CONSTANT && 
+                        symbol->getDataType() == DataType::CUSTOM) {
+                        // This is an enum constant, cast it to int for set compatibility
+                        emit("static_cast<int>(");
+                        element->accept(*this);
+                        emit(")");
+                    } else {
+                        element->accept(*this);
+                    }
+                } else {
+                    element->accept(*this);
+                }
+            } else {
+                element->accept(*this);
+            }
+            first = false;
+        }
     }
     emit("}");
+}
+
+void CppGenerator::visit(RangeExpression& node) {
+    // In C++, we need to expand ranges to individual elements
+    // This is typically handled in the context where the range is used (like set literals)
+    // For now, we'll generate a placeholder that indicates this should be expanded
+    emit("/* range: ");
+    const_cast<Expression*>(node.getStart())->accept(*this);
+    emit(" .. ");
+    const_cast<Expression*>(node.getEnd())->accept(*this);
+    emit(" */");
+    // Note: Range expansion will be handled by the parent context (e.g., SetLiteralExpression)
 }
 
 void CppGenerator::visit(FormattedExpression& node) {
@@ -669,6 +921,20 @@ void CppGenerator::visit(GotoStatement& node) {
     emitLine("goto label_" + node.getTarget() + ";");
 }
 
+void CppGenerator::visit(BreakStatement& node) {
+    (void)node; // Suppress unused parameter warning
+    // Generate C++ break statement
+    emitIndent();
+    emitLine("break;");
+}
+
+void CppGenerator::visit(ContinueStatement& node) {
+    (void)node; // Suppress unused parameter warning
+    // Generate C++ continue statement
+    emitIndent();
+    emitLine("continue;");
+}
+
 void CppGenerator::visit(ConstantDeclaration& node) {
     emitIndent();
     emit("const auto " + node.getName() + " = ");
@@ -714,6 +980,18 @@ void CppGenerator::visit(TypeDefinition& node) {
     else if (!definition.empty() && definition[0] == '^') {
         generatePointerDefinition(node.getName(), definition);
     }
+    // Handle file types
+    else if (definition.find("file of") != std::string::npos) {
+        generateFileDefinition(node.getName(), definition);
+    }
+    // Handle text files
+    else if (definition == "text") {
+        emitLine("using " + node.getName() + " = PascalFile;");
+    }
+    // Handle untyped files
+    else if (definition == "file") {
+        emitLine("using " + node.getName() + " = PascalFile;");
+    }
     else {
         // For other types, generate a comment for now
         emitLine("// Type definition: " + node.getName() + " = " + definition);
@@ -736,9 +1014,20 @@ void CppGenerator::visit(RecordTypeDefinition& node) {
     if (node.hasVariantPart()) {
         const VariantPart* variantPart = node.getVariantPart();
         
-        // Generate the selector field
-        emitIndent();
-        emitLine(mapPascalTypeToCpp(variantPart->getSelectorType()) + " " + variantPart->getSelectorName() + ";");
+        // Check if the selector field is already defined in regular fields
+        bool selectorAlreadyDefined = false;
+        for (const auto& field : node.getFields()) {
+            if (field.getName() == variantPart->getSelectorName()) {
+                selectorAlreadyDefined = true;
+                break;
+            }
+        }
+        
+        // Generate the selector field only if not already defined
+        if (!selectorAlreadyDefined) {
+            emitIndent();
+            emitLine(mapPascalTypeToCpp(variantPart->getSelectorType()) + " " + variantPart->getSelectorName() + ";");
+        }
         
         // For variant records, generate all variant fields as regular fields
         // This simplifies the implementation and matches Pascal's behavior where
@@ -766,12 +1055,18 @@ void CppGenerator::visit(RecordTypeDefinition& node) {
         }
         
         if (variantPart) {
-            if (!first) emit(", ");
-            emit(variantPart->getSelectorName() + "()");
+            // Only initialize selector if not already initialized in regular fields
+            if (!selectorAlreadyDefined) {
+                if (!first) emit(", ");
+                emit(variantPart->getSelectorName() + "()");
+                first = false;
+            }
             
             for (const auto& variantCase : variantPart->getCases()) {
                 for (const auto& field : variantCase->getFields()) {
-                    emit(", " + field.getName() + "()");
+                    if (!first) emit(", ");
+                    emit(field.getName() + "()");
+                    first = false;
                 }
             }
         }
@@ -789,6 +1084,23 @@ void CppGenerator::visit(VariableDeclaration& node) {
     emitIndent();
     emit(cppType + " " + node.getName());
     
+    // Register variable in symbol table for proper lookups
+    if (symbolTable_) {
+        DataType dataType = symbolTable_->resolveDataType(node.getType());
+        auto symbol = std::make_shared<Symbol>(node.getName(), SymbolType::VARIABLE, dataType);
+        symbol->setTypeName(node.getType()); // Use original Pascal type name, not C++ mapped type
+        
+        // Handle pointer types - set pointee information
+        if (dataType == DataType::POINTER && !node.getType().empty() && node.getType()[0] == '^') {
+            std::string pointeeTypeName = node.getType().substr(1); // Remove '^' prefix
+            DataType pointeeType = symbolTable_->resolveDataType(pointeeTypeName);
+            symbol->setPointeeType(pointeeType);
+            symbol->setPointeeTypeName(pointeeTypeName);
+        }
+        
+        symbolTable_->define(node.getName(), symbol);
+    }
+    
     if (node.getInitializer()) {
         emit(" = ");
         node.getInitializer()->accept(*this);
@@ -803,10 +1115,24 @@ void CppGenerator::visit(ProcedureDeclaration& node) {
         return;
     }
     
-    // Generate nested procedures and functions BEFORE the parent procedure
-    // This ensures they are declared before being called
-    for (const auto& nestedDecl : node.getNestedDeclarations()) {
-        nestedDecl->accept(*this);
+    // Register this procedure in the symbol table so it can be found for calls
+    if (symbolTable_) {
+        symbolTable_->define(node.getName(), SymbolType::PROCEDURE, DataType::UNKNOWN);
+    }
+    
+    // Check for nested procedures/functions and emit error message
+    if (!node.getNestedDeclarations().empty()) {
+        emitLine("// ERROR: Nested procedures/functions are not supported in RPascal");
+        emitLine("// Please refactor '" + node.getName() + "' to use global procedures instead");
+        emitLine("// Nested declarations found: ");
+        for (const auto& nestedDecl : node.getNestedDeclarations()) {
+            if (auto procDecl = dynamic_cast<ProcedureDeclaration*>(nestedDecl.get())) {
+                emitLine("//   - procedure " + procDecl->getName());
+            } else if (auto funcDecl = dynamic_cast<FunctionDeclaration*>(nestedDecl.get())) {
+                emitLine("//   - function " + funcDecl->getName());
+            }
+        }
+        emitLine("");
     }
     
     std::string mangledName = generateMangledFunctionName(node.getName(), node.getParameters());
@@ -843,6 +1169,12 @@ void CppGenerator::visit(FunctionDeclaration& node) {
     // Skip forward declarations - they're handled in generateForwardDeclarations
     if (node.isForward()) {
         return;
+    }
+    
+    // Register this function in the symbol table so it can be found for calls
+    if (symbolTable_) {
+        DataType returnType = symbolTable_->resolveDataType(node.getReturnType());
+        symbolTable_->define(node.getName(), SymbolType::FUNCTION, returnType);
     }
     
     // Generate nested procedures and functions BEFORE the parent function
@@ -1077,18 +1409,25 @@ std::string CppGenerator::generateHeaders() {
            "#include <type_traits>\n"
            "#include <thread>\n"
            "#include <chrono>\n"
-           "#include <filesystem>\n"
-           "#ifdef _WIN32\n"
-           "#include <conio.h>\n"
-           "#include <windows.h>\n"
-           "#else\n"
-           "#include <unistd.h>\n"
-           "#include <termios.h>\n"
-           "#endif";
+           "#include <filesystem>\n";
+           // Note: Platform-specific includes (windows.h, conio.h) moved to 
+           // unit-specific includes to avoid unnecessary Windows API conflicts
 }
 
 std::string CppGenerator::generateRuntimeIncludes() {
     return "// Using explicit std:: prefixes to avoid name conflicts\n\n"
+           "// Pascal string functions\n"
+           "void Delete(std::string& s, int index, int count) {\n"
+           "    if (index <= 0 || index > static_cast<int>(s.length())) return;\n"
+           "    int startPos = index - 1;  // Convert to 0-based index\n"
+           "    s.erase(startPos, count);\n"
+           "}\n\n"
+           "void Insert(const std::string& substr, std::string& s, int index) {\n"
+           "    if (index <= 0) index = 1;\n"
+           "    if (index > static_cast<int>(s.length()) + 1) index = s.length() + 1;\n"
+           "    int insertPos = index - 1;  // Convert to 0-based index\n"
+           "    s.insert(insertPos, substr);\n"
+           "}\n\n"
            "// Pascal file wrapper class\n"
            "class PascalFile {\n"
            "private:\n"
@@ -1121,6 +1460,52 @@ std::string CppGenerator::generateRuntimeIncludes() {
            "    \n"
            "    bool eof() const {\n"
            "        return stream_.eof();\n"
+           "    }\n"
+           "    \n"
+           "    std::fstream& getStream() { return stream_; }\n"
+           "    const std::string& getFilename() const { return filename_; }\n"
+           "};\n\n"
+           "// Pascal typed file wrapper class\n"
+           "template<typename T>\n"
+           "class PascalTypedFile {\n"
+           "private:\n"
+           "    std::fstream stream_;\n"
+           "    std::string filename_;\n"
+           "    \n"
+           "public:\n"
+           "    PascalTypedFile() = default;\n"
+           "    ~PascalTypedFile() { close(); }\n"
+           "    \n"
+           "    void assign(const std::string& filename) {\n"
+           "        filename_ = filename;\n"
+           "    }\n"
+           "    \n"
+           "    void reset() {\n"
+           "        close();\n"
+           "        stream_.open(filename_, std::ios::in | std::ios::binary);\n"
+           "    }\n"
+           "    \n"
+           "    void rewrite() {\n"
+           "        close();\n"
+           "        stream_.open(filename_, std::ios::out | std::ios::binary);\n"
+           "    }\n"
+           "    \n"
+           "    void close() {\n"
+           "        if (stream_.is_open()) {\n"
+           "            stream_.close();\n"
+           "        }\n"
+           "    }\n"
+           "    \n"
+           "    bool eof() const {\n"
+           "        return stream_.eof();\n"
+           "    }\n"
+           "    \n"
+           "    void write(const T& data) {\n"
+           "        stream_.write(reinterpret_cast<const char*>(&data), sizeof(T));\n"
+           "    }\n"
+           "    \n"
+           "    void read(T& data) {\n"
+           "        stream_.read(reinterpret_cast<char*>(&data), sizeof(T));\n"
            "    }\n"
            "    \n"
            "    std::fstream& getStream() { return stream_; }\n"
@@ -1178,8 +1563,33 @@ std::string CppGenerator::mapPascalTypeToCpp(const std::string& pascalType) {
     
     // Handle pointer types: ^Type -> Type*
     if (!lowerType.empty() && lowerType[0] == '^') {
-        std::string pointeeType = lowerType.substr(1);
+        std::string pointeeType = pascalType.substr(1); // Use original case, not lowercase
         return mapPascalTypeToCpp(pointeeType) + "*";
+    }
+    
+    // Handle open array types: array of Type -> std::vector<Type>&
+    if (lowerType == "array of integer") {
+        return "std::vector<int32_t>";
+    }
+    if (lowerType == "array of real") {
+        return "std::vector<double>";
+    }
+    if (lowerType == "array of char") {
+        return "std::vector<char>";
+    }
+    if (lowerType == "array of boolean") {
+        return "std::vector<bool>";
+    }
+    if (lowerType == "array of string") {
+        return "std::vector<std::string>";
+    }
+    
+    // Handle generic open array types
+    if (lowerType.find("array of ") == 0) {
+        std::string elementType = pascalType.substr(9); // Skip "array of "
+        elementType.erase(0, elementType.find_first_not_of(" \t\n\r")); // Trim leading whitespace
+        std::string cppElementType = mapPascalTypeToCpp(elementType);
+        return "std::vector<" + cppElementType + ">";
     }
     
     // Handle array types: array[0..9] of Type -> std::array<Type, 10> (must be before subrange check)
@@ -1235,6 +1645,11 @@ std::string CppGenerator::mapPascalTypeToCpp(const std::string& pascalType) {
     if (lowerType == "text") return "PascalFile";
     if (lowerType == "file") return "PascalFile"; // Untyped file
     
+    // Handle bounded string types: string[30] -> std::string
+    if (lowerType.find("string[") == 0 && lowerType.find(']') != std::string::npos) {
+        return "std::string"; // For now, map bounded strings to std::string
+    }
+    
     // Handle typed files: file of T
     if (lowerType.find("file of") == 0) {
         std::string elementType = lowerType.substr(8); // Skip "file of "
@@ -1275,6 +1690,17 @@ void CppGenerator::generateFunctionCall(CallExpression& node) {
     if (isBuiltinFunction(functionName)) {
         generateBuiltinCall(node, functionName);
     } else {
+        // Check if this is a recursive call to the current function
+        if (!currentFunction_.empty() && functionName == currentFunctionOriginalName_) {
+            // Use the mangled name for recursive calls
+            emit(currentFunction_ + "(");
+            for (size_t i = 0; i < node.getArguments().size(); ++i) {
+                if (i > 0) emit(", ");
+                node.getArguments()[i]->accept(*this);
+            }
+            emit(")");
+            return;
+        }
         // For overloaded functions, we need to resolve which one to call
         // Build argument types for proper overload resolution
         std::vector<DataType> argTypes;
@@ -1298,6 +1724,16 @@ void CppGenerator::generateFunctionCall(CallExpression& node) {
                 auto symbol = symbolTable_->lookup(identifier->getName());
                 if (symbol) {
                     argType = symbol->getDataType();
+                    // For CUSTOM types, check if it's a known enum type
+                    if (argType == DataType::CUSTOM && !symbol->getTypeName().empty()) {
+                        // Keep CUSTOM but the type name will be used in mangling
+                        argType = DataType::CUSTOM;
+                    }
+                } else {
+                    // Check if it's a known enum constant
+                    if (isBuiltinConstant(identifier->getName())) {
+                        argType = DataType::INTEGER; // Enum constants are treated as integers
+                    }
                 }
             }
             // TODO: Handle other expression types (array access, field access, etc.)
@@ -1308,29 +1744,42 @@ void CppGenerator::generateFunctionCall(CallExpression& node) {
         // Try to find the matching function overload
         auto functionSymbol = symbolTable_->lookupFunction(functionName, argTypes);
         if (functionSymbol) {
-            // Generate mangled name based on the found function's parameters
+            // Build proper mangled name using argument type information
             std::vector<std::unique_ptr<VariableDeclaration>> dummyParams;
-            // We need to create dummy parameter declarations to use the existing mangling function
-            // This is a bit of a hack - in a real implementation, we'd store the mangled name in the symbol
             
-            // For now, let's build the mangled name directly from the parameter types
-            std::string mangledName = functionName;
-            if (!argTypes.empty()) {
-                mangledName += "_";
-                for (size_t i = 0; i < argTypes.size(); ++i) {
-                    if (i > 0) mangledName += "_";
-                    
-                    switch (argTypes[i]) {
-                        case DataType::INTEGER: mangledName += "int"; break;
-                        case DataType::REAL: mangledName += "real"; break;
-                        case DataType::BOOLEAN: mangledName += "bool"; break;
-                        case DataType::CHAR: mangledName += "char"; break;
-                        case DataType::STRING: mangledName += "str"; break;
-                        default: mangledName += "unk"; break;
+            // Create dummy parameters based on the argument types and symbol information
+            for (size_t i = 0; i < argTypes.size(); ++i) {
+                std::string paramType;
+                
+                // Try to get the actual type name from the argument if possible
+                if (i < node.getArguments().size()) {
+                    if (auto identifier = dynamic_cast<IdentifierExpression*>(node.getArguments()[i].get())) {
+                        auto symbol = symbolTable_->lookup(identifier->getName());
+                        if (symbol && !symbol->getTypeName().empty()) {
+                            paramType = symbol->getTypeName();
+                        }
                     }
                 }
+                
+                // Fallback to basic type mapping if we don't have the type name
+                if (paramType.empty()) {
+                    switch (argTypes[i]) {
+                        case DataType::INTEGER: paramType = "integer"; break;
+                        case DataType::REAL: paramType = "real"; break;
+                        case DataType::BOOLEAN: paramType = "boolean"; break;
+                        case DataType::CHAR: paramType = "char"; break;
+                        case DataType::STRING: paramType = "string"; break;
+                        case DataType::CUSTOM: paramType = "custom"; break;
+                        default: paramType = "unknown"; break;
+                    }
+                }
+                
+                auto param = std::make_unique<VariableDeclaration>("dummy" + std::to_string(i), paramType, nullptr);
+                dummyParams.push_back(std::move(param));
             }
             
+            // Generate the proper mangled name using the same algorithm as function definitions
+            std::string mangledName = generateMangledFunctionName(functionName, dummyParams);
             emit(mangledName + "(");
         } else {
             // Fallback to original name if no overload found
@@ -1380,8 +1829,38 @@ bool CppGenerator::generateBasicIOCall(CallExpression& node, const std::string& 
             // writeln() with no arguments just prints a newline
             emit("std::cout << std::endl");
         } else {
-            emit("std::cout");
-            for (const auto& arg : node.getArguments()) {
+            // Check if the first argument is a file variable
+            bool isFileOutput = false;
+            std::string outputTarget = "std::cout";
+            
+            if (auto firstArg = dynamic_cast<IdentifierExpression*>(node.getArguments()[0].get())) {
+                if (symbolTable_) {
+                    auto symbol = symbolTable_->lookup(firstArg->getName());
+                    if (symbol && (symbol->getDataType() == DataType::FILE_TYPE || 
+                                  (symbol->getDataType() == DataType::CUSTOM && 
+                                   symbol->getTypeName().find("File") != std::string::npos))) {
+                        isFileOutput = true;
+                        // Check if this is a typed file (PascalTypedFile)
+                        if (symbol->getDataType() == DataType::CUSTOM && 
+                            symbol->getTypeName().find("PascalTypedFile") != std::string::npos) {
+                            // For typed files, use direct write method
+                            emit(firstArg->getName() + ".write(");
+                            if (node.getArguments().size() > 1) {
+                                node.getArguments()[1]->accept(*this);
+                            }
+                            emit(")");
+                            return true;
+                        } else {
+                            outputTarget = firstArg->getName() + ".getStream()";
+                        }
+                    }
+                }
+            }
+            
+            emit(outputTarget);
+            size_t startIdx = isFileOutput ? 1 : 0; // Skip file argument if present
+            for (size_t i = startIdx; i < node.getArguments().size(); ++i) {
+                const auto& arg = node.getArguments()[i];
                 emit(" << ");
                 
                 // Check if this is a Byte type that needs casting for proper display
@@ -1452,8 +1931,38 @@ bool CppGenerator::generateBasicIOCall(CallExpression& node, const std::string& 
             // write() with no arguments does nothing (but is valid)
             emit("// write() with no arguments");
         } else {
-            emit("std::cout");
-            for (const auto& arg : node.getArguments()) {
+            // Check if the first argument is a file variable
+            bool isFileOutput = false;
+            std::string outputTarget = "std::cout";
+            
+            if (auto firstArg = dynamic_cast<IdentifierExpression*>(node.getArguments()[0].get())) {
+                if (symbolTable_) {
+                    auto symbol = symbolTable_->lookup(firstArg->getName());
+                    if (symbol && (symbol->getDataType() == DataType::FILE_TYPE || 
+                                  (symbol->getDataType() == DataType::CUSTOM && 
+                                   symbol->getTypeName().find("File") != std::string::npos))) {
+                        isFileOutput = true;
+                        // Check if this is a typed file (PascalTypedFile)
+                        if (symbol->getDataType() == DataType::CUSTOM && 
+                            symbol->getTypeName().find("PascalTypedFile") != std::string::npos) {
+                            // For typed files, use direct write method
+                            emit(firstArg->getName() + ".write(");
+                            if (node.getArguments().size() > 1) {
+                                node.getArguments()[1]->accept(*this);
+                            }
+                            emit(")");
+                            return true;
+                        } else {
+                            outputTarget = firstArg->getName() + ".getStream()";
+                        }
+                    }
+                }
+            }
+            
+            emit(outputTarget);
+            size_t startIdx = isFileOutput ? 1 : 0; // Skip file argument if present
+            for (size_t i = startIdx; i < node.getArguments().size(); ++i) {
+                const auto& arg = node.getArguments()[i];
                 emit(" << ");
                 
                 // Check if this is a Byte type that needs casting for proper display
@@ -1500,8 +2009,28 @@ bool CppGenerator::generateBasicIOCall(CallExpression& node, const std::string& 
         }
         return true;
     } else if (lowerName == "readln") {
-        emit("std::cin");
-        for (const auto& arg : node.getArguments()) {
+        // Check if the first argument is a file variable
+        bool isFileInput = false;
+        std::string inputSource = "std::cin";
+        
+        if (!node.getArguments().empty()) {
+            if (auto firstArg = dynamic_cast<IdentifierExpression*>(node.getArguments()[0].get())) {
+                if (symbolTable_) {
+                    auto symbol = symbolTable_->lookup(firstArg->getName());
+                    if (symbol && (symbol->getDataType() == DataType::FILE_TYPE || 
+                                  (symbol->getDataType() == DataType::CUSTOM && 
+                                   symbol->getTypeName().find("File") != std::string::npos))) {
+                        isFileInput = true;
+                        inputSource = firstArg->getName() + ".getStream()";
+                    }
+                }
+            }
+        }
+        
+        emit(inputSource);
+        size_t startIdx = isFileInput ? 1 : 0; // Skip file argument if present
+        for (size_t i = startIdx; i < node.getArguments().size(); ++i) {
+            const auto& arg = node.getArguments()[i];
             emit(" >> ");
             
             // Check if this is a Byte type that needs casting for proper input
@@ -1779,6 +2308,30 @@ bool CppGenerator::generateStringFunctionCall(CallExpression& node, const std::s
                 emit(", ");
                 node.getArguments()[2]->accept(*this); // padding char
             }
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "delete") {
+        // Delete(s, index, count) - modifies string in place
+        emit("Delete(");
+        if (node.getArguments().size() >= 3) {
+            node.getArguments()[0]->accept(*this); // string (by reference)
+            emit(", ");
+            node.getArguments()[1]->accept(*this); // index
+            emit(", ");
+            node.getArguments()[2]->accept(*this); // count
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "insert") {
+        // Insert(substring, s, index) - modifies string in place
+        emit("Insert(");
+        if (node.getArguments().size() >= 3) {
+            node.getArguments()[0]->accept(*this); // substring
+            emit(", ");
+            node.getArguments()[1]->accept(*this); // string (by reference)
+            emit(", ");
+            node.getArguments()[2]->accept(*this); // index
         }
         emit(")");
         return true;
@@ -2071,19 +2624,52 @@ std::string CppGenerator::generateMangledFunctionName(const std::string& functio
             
             std::string paramType = parameters[i]->getType();
             // Convert Pascal type names to safe C++ identifier parts
-            if (paramType == "integer") mangledName << "int";
-            else if (paramType == "real") mangledName << "real";
-            else if (paramType == "boolean") mangledName << "bool";
-            else if (paramType == "char") mangledName << "char";
-            else if (paramType == "string") mangledName << "str";
+            std::string lowerType = paramType;
+            std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(), 
+                          [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            
+            if (lowerType == "integer") mangledName << "int";
+            else if (lowerType == "real") mangledName << "real";
+            else if (lowerType == "boolean") mangledName << "bool";
+            else if (lowerType == "char") mangledName << "char";
+            else if (lowerType == "string") mangledName << "str";
+            else if (lowerType == "array of integer") mangledName << "arrayofint";
+            else if (lowerType == "array of real") mangledName << "arrayofreal";
+            else if (lowerType == "array of char") mangledName << "arrayofchar";
+            else if (lowerType == "array of boolean") mangledName << "arrayofbool";
+            else if (lowerType == "array of string") mangledName << "arrayofstr";
+            else if (lowerType.find("array of ") == 0) {
+                // Generic array of Type -> arrayofType
+                std::string elementType = paramType.substr(9);
+                elementType.erase(0, elementType.find_first_not_of(" \t\n\r"));
+                mangledName << "arrayof";
+                // Recursively mangle the element type
+                std::vector<std::unique_ptr<VariableDeclaration>> dummyParams;
+                auto dummyParam = std::make_unique<VariableDeclaration>("dummy", elementType, nullptr);
+                dummyParams.push_back(std::move(dummyParam));
+                std::string elementMangle = generateMangledFunctionName("", dummyParams);
+                // Extract just the type part (remove the trailing "_")
+                if (elementMangle.size() > 1 && elementMangle[0] == '_') {
+                    mangledName << elementMangle.substr(1);
+                } else {
+                    mangledName << "custom";
+                }
+            }
             else {
-                // For custom types, sanitize the name
+                // For custom types (including enums), use the type name directly
+                // but sanitize it to be a valid C++ identifier
+                std::string sanitized;
                 for (char c : paramType) {
                     if (std::isalnum(c)) {
-                        mangledName << c;
-                    } else {
-                        mangledName << "_";
+                        sanitized += c;
+                    } else if (c == ' ') {
+                        sanitized += "_";
                     }
+                }
+                if (!sanitized.empty()) {
+                    mangledName << sanitized;
+                } else {
+                    mangledName << "custom";
                 }
             }
         }
@@ -2629,12 +3215,37 @@ void CppGenerator::generateEnumDefinition(const std::string& typeName, const std
         emitLine("// Enum value constants for Pascal compatibility");
         for (size_t i = 0; i < enumInfo.values.size(); ++i) {
             const std::string& enumValue = enumInfo.values[i];
+            // Add conflict resolution for Windows API functions
+            if (enumValue == "Rectangle") {
+                emitLine("#ifdef Rectangle");
+                emitLine("#undef Rectangle");
+                emitLine("#endif");
+            }
             emitLine("const " + typeName + " " + enumValue + " = " + typeName + "::" + enumValue + ";");
         }
     } else {
         // Malformed enum definition
         emitLine("// Enum definition: " + typeName + " = " + definition);
         emitLine("using " + typeName + " = int; // TODO: implement proper enum type");
+    }
+    emitLine("");
+}
+
+void CppGenerator::generateFileDefinition(const std::string& typeName, const std::string& definition) {
+    // Parse file definition: "file of integer", "file of real", etc.
+    
+    if (definition.find("file of") == 0) {
+        std::string elementType = definition.substr(8); // Skip "file of "
+        elementType.erase(0, elementType.find_first_not_of(" \t\n\r")); // Trim leading whitespace
+        
+        std::string cppElementType = mapPascalTypeToCpp(elementType);
+        
+        emitLine("// File type: " + typeName + " = " + definition);
+        emitLine("using " + typeName + " = PascalTypedFile<" + cppElementType + ">;");
+    } else {
+        // Fallback for malformed file definitions
+        emitLine("// File definition: " + typeName + " = " + definition);
+        emitLine("using " + typeName + " = PascalFile; // Fallback to untyped file");
     }
     emitLine("");
 }
@@ -2650,8 +3261,17 @@ void CppGenerator::visit(UsesClause& node) {
             emitLine("#include <filesystem>  // DOS unit support");
             emitLine("#include <chrono>      // Date/time functions");
         } else if (unitName == "Crt") {
+            emitLine("#ifdef _WIN32");
             emitLine("#include <conio.h>     // CRT unit support (Windows)");
+            // Only include windows.h if we need console functions that aren't in conio.h
             emitLine("#include <windows.h>   // Console API");
+            emitLine("#ifdef Rectangle");
+            emitLine("#undef Rectangle       // Avoid conflict with Pascal Rectangle identifier");
+            emitLine("#endif");
+            emitLine("#else");
+            emitLine("#include <unistd.h>");
+            emitLine("#include <termios.h>");
+            emitLine("#endif");
         } else {
             // Generate C++ code for custom units
             if (unitLoader_ && unitLoader_->isUnitLoaded(unitName)) {
@@ -2724,6 +3344,72 @@ void CppGenerator::visit(Unit& node) {
         emitLine("};");
         emitLine("static " + node.getName() + "_Initializer " + node.getName() + "_init;");
     }
+}
+
+std::vector<std::string> CppGenerator::expandEnumRange(const std::string& startName, const std::string& endName) {
+    std::vector<std::string> result;
+    
+    if (!symbolTable_) {
+        return result;
+    }
+    
+    // Look up the start element to find its enum type
+    auto startSymbol = symbolTable_->lookup(startName);
+    if (!startSymbol || startSymbol->getSymbolType() != SymbolType::CONSTANT || 
+        startSymbol->getDataType() != DataType::CUSTOM) {
+        return result;
+    }
+    
+    std::string enumTypeName = startSymbol->getTypeName();
+    
+    // Look up the enum type definition
+    auto enumTypeSymbol = symbolTable_->lookup(enumTypeName);
+    if (!enumTypeSymbol || enumTypeSymbol->getSymbolType() != SymbolType::TYPE_DEF) {
+        return result;
+    }
+    
+    std::string enumDef = enumTypeSymbol->getTypeDefinition();
+    
+    // Parse the enum definition to extract all values
+    // Format: (Value1, Value2, Value3, ...)
+    if (enumDef.empty() || enumDef[0] != '(' || enumDef.back() != ')') {
+        return result;
+    }
+    
+    std::string enumValues = enumDef.substr(1, enumDef.length() - 2); // Remove parentheses
+    std::vector<std::string> allValues;
+    
+    // Split by commas
+    std::stringstream ss(enumValues);
+    std::string value;
+    while (std::getline(ss, value, ',')) {
+        // Trim whitespace
+        value.erase(0, value.find_first_not_of(" \t"));
+        value.erase(value.find_last_not_of(" \t") + 1);
+        if (!value.empty()) {
+            allValues.push_back(value);
+        }
+    }
+    
+    // Find the indices of start and end values
+    int startIndex = -1, endIndex = -1;
+    for (size_t i = 0; i < allValues.size(); ++i) {
+        if (allValues[i] == startName) {
+            startIndex = static_cast<int>(i);
+        }
+        if (allValues[i] == endName) {
+            endIndex = static_cast<int>(i);
+        }
+    }
+    
+    // Extract the range
+    if (startIndex >= 0 && endIndex >= 0 && startIndex <= endIndex) {
+        for (int i = startIndex; i <= endIndex; ++i) {
+            result.push_back(allValues[i]);
+        }
+    }
+    
+    return result;
 }
 
 } // namespace rpascal

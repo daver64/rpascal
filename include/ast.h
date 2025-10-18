@@ -208,6 +208,22 @@ private:
     std::vector<std::unique_ptr<Expression>> elements_;
 };
 
+class RangeExpression : public Expression {
+public:
+    RangeExpression(std::unique_ptr<Expression> start, std::unique_ptr<Expression> end)
+        : start_(std::move(start)), end_(std::move(end)) {}
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+    
+    const Expression* getStart() const { return start_.get(); }
+    const Expression* getEnd() const { return end_.get(); }
+    
+private:
+    std::unique_ptr<Expression> start_;
+    std::unique_ptr<Expression> end_;
+};
+
 class FormattedExpression : public Expression {
 public:
     FormattedExpression(std::unique_ptr<Expression> expr,
@@ -428,6 +444,22 @@ public:
     
 private:
     std::string target_;
+};
+
+class BreakStatement : public Statement {
+public:
+    BreakStatement() = default;
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
+};
+
+class ContinueStatement : public Statement {
+public:
+    ContinueStatement() = default;
+    
+    void accept(ASTVisitor& visitor) override;
+    std::string toString() const override;
 };
 
 // Array Type representation
@@ -752,6 +784,7 @@ public:
     virtual void visit(FieldAccessExpression& node) = 0;
     virtual void visit(ArrayIndexExpression& node) = 0;
     virtual void visit(SetLiteralExpression& node) = 0;
+    virtual void visit(RangeExpression& node) = 0;
     virtual void visit(FormattedExpression& node) = 0;
     
     virtual void visit(ExpressionStatement& node) = 0;
@@ -765,6 +798,8 @@ public:
     virtual void visit(WithStatement& node) = 0;
     virtual void visit(LabelStatement& node) = 0;
     virtual void visit(GotoStatement& node) = 0;
+    virtual void visit(BreakStatement& node) = 0;
+    virtual void visit(ContinueStatement& node) = 0;
     
     virtual void visit(ConstantDeclaration& node) = 0;
     virtual void visit(LabelDeclaration& node) = 0;
