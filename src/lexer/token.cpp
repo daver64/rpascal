@@ -41,6 +41,7 @@ const std::unordered_map<std::string, TokenType> Keywords::keywords_ = {
     {"external", TokenType::EXTERNAL},
     {"interface", TokenType::INTERFACE},
     {"implementation", TokenType::IMPLEMENTATION},
+    {"overload", TokenType::OVERLOAD},
     {"integer", TokenType::INTEGER},
     {"real", TokenType::REAL},
     {"boolean", TokenType::BOOLEAN},
@@ -130,6 +131,7 @@ std::string Token::tokenTypeToString(TokenType type) {
         case TokenType::EXTERNAL: return "EXTERNAL";
         case TokenType::INTERFACE: return "INTERFACE";
         case TokenType::IMPLEMENTATION: return "IMPLEMENTATION";
+        case TokenType::OVERLOAD: return "OVERLOAD";
         case TokenType::INTEGER: return "INTEGER";
         case TokenType::REAL: return "REAL";
         case TokenType::BOOLEAN: return "BOOLEAN";

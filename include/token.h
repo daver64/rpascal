@@ -49,6 +49,7 @@ enum class TokenType {
     EXTERNAL,
     INTERFACE,
     IMPLEMENTATION,
+    OVERLOAD,
     
     // Data types
     INTEGER,

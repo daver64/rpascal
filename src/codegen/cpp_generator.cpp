@@ -1394,56 +1394,57 @@ bool CppGenerator::generateBasicIOCall(CallExpression& node, const std::string& 
                         }
                     }
                 } else if (auto arrayAccess = dynamic_cast<ArrayIndexExpression*>(arg.get())) {
-                // Check if array element type is Byte
-                if (auto arrayIdent = dynamic_cast<IdentifierExpression*>(arrayAccess->getArray())) {
-                    if (symbolTable_) {
-                        auto symbol = symbolTable_->lookup(arrayIdent->getName());
-                        if (symbol) {
-                            // Check for named types in arrayTypes_ (for custom types)
-                            if (symbol->getDataType() == DataType::CUSTOM) {
-                                std::string typeName = symbol->getTypeName();
-                                auto arrayTypeIt = arrayTypes_.find(typeName);
-                                if (arrayTypeIt != arrayTypes_.end()) {
-                                    const ArrayTypeInfo& info = arrayTypeIt->second;
-                                    std::string lowerElementType = info.elementType;
-                                    std::transform(lowerElementType.begin(), lowerElementType.end(), lowerElementType.begin(), 
-                                                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                                    if (lowerElementType == "byte") {
-                                        needsCast = true;
+                    // Check if array element type is Byte
+                    if (auto arrayIdent = dynamic_cast<IdentifierExpression*>(arrayAccess->getArray())) {
+                        if (symbolTable_) {
+                            auto symbol = symbolTable_->lookup(arrayIdent->getName());
+                            if (symbol) {
+                                // Check for named types in arrayTypes_ (for custom types)
+                                if (symbol->getDataType() == DataType::CUSTOM) {
+                                    std::string typeName = symbol->getTypeName();
+                                    auto arrayTypeIt = arrayTypes_.find(typeName);
+                                    if (arrayTypeIt != arrayTypes_.end()) {
+                                        const ArrayTypeInfo& info = arrayTypeIt->second;
+                                        std::string lowerElementType = info.elementType;
+                                        std::transform(lowerElementType.begin(), lowerElementType.end(), lowerElementType.begin(), 
+                                                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                                        if (lowerElementType == "byte") {
+                                            needsCast = true;
+                                        }
+                                    } else {
+                                        // For inline arrays, check the type name directly for "of byte"
+                                        std::string lowerTypeName = typeName;
+                                        std::transform(lowerTypeName.begin(), lowerTypeName.end(), lowerTypeName.begin(), 
+                                                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                                        if (lowerTypeName.find("of byte") != std::string::npos) {
+                                            needsCast = true;
+                                        }
                                     }
                                 } else {
-                                    // For inline arrays, check the type name directly for "of byte"
+                                    // Check any symbol with uint8_t in type name (handles inline arrays with different DataType)
+                                    std::string typeName = symbol->getTypeName();
                                     std::string lowerTypeName = typeName;
                                     std::transform(lowerTypeName.begin(), lowerTypeName.end(), lowerTypeName.begin(), 
                                                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                                    if (lowerTypeName.find("of byte") != std::string::npos) {
+                                    if (lowerTypeName.find("uint8_t") != std::string::npos) {
                                         needsCast = true;
                                     }
-                                }
-                            } else {
-                                // Check any symbol with uint8_t in type name (handles inline arrays with different DataType)
-                                std::string typeName = symbol->getTypeName();
-                                std::string lowerTypeName = typeName;
-                                std::transform(lowerTypeName.begin(), lowerTypeName.end(), lowerTypeName.begin(), 
-                                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                                if (lowerTypeName.find("uint8_t") != std::string::npos) {
-                                    needsCast = true;
                                 }
                             }
                         }
                     }
                 }
+                
+                if (needsCast) {
+                    emit("static_cast<int>(");
+                    arg->accept(*this);
+                    emit(")");
+                } else {
+                    arg->accept(*this);
+                }
             }
-            
-            if (needsCast) {
-                emit("static_cast<int>(");
-                arg->accept(*this);
-                emit(")");
-            } else {
-                arg->accept(*this);
-            }
-        }
-            // Note: write() does NOT add std::endl like writeln() does
+            // Add newline for writeln
+            emit(" << std::endl");
         }
         return true;
     } else if (lowerName == "write") {
@@ -1710,6 +1711,74 @@ bool CppGenerator::generateStringFunctionCall(CallExpression& node, const std::s
         emit("[](std::string s) { std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::toupper(c); }); return s; }(");
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "trimleft") {
+        emit("[](std::string s) { s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) { return !std::isspace(ch); })); return s; }(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "trimright") {
+        emit("[](std::string s) { s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end()); return s; }(");
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "stringofchar") {
+        emit("std::string(");
+        if (node.getArguments().size() >= 2) {
+            node.getArguments()[1]->accept(*this); // count
+            emit(", ");
+            node.getArguments()[0]->accept(*this); // char
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "leftstr") {
+        emit("(");
+        if (node.getArguments().size() >= 2) {
+            node.getArguments()[0]->accept(*this); // string
+            emit(".substr(0, ");
+            node.getArguments()[1]->accept(*this); // count
+            emit(")");
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "rightstr") {
+        emit("[](const std::string& s, int count) { return count >= static_cast<int>(s.length()) ? s : s.substr(s.length() - count); }(");
+        if (node.getArguments().size() >= 2) {
+            node.getArguments()[0]->accept(*this); // string
+            emit(", ");
+            node.getArguments()[1]->accept(*this); // count
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "padleft") {
+        emit("[](const std::string& s, int width, char pad = ' ') { return width <= static_cast<int>(s.length()) ? s : std::string(width - s.length(), pad) + s; }(");
+        if (node.getArguments().size() >= 2) {
+            node.getArguments()[0]->accept(*this); // string
+            emit(", ");
+            node.getArguments()[1]->accept(*this); // width
+            if (node.getArguments().size() >= 3) {
+                emit(", ");
+                node.getArguments()[2]->accept(*this); // padding char
+            }
+        }
+        emit(")");
+        return true;
+    } else if (lowerName == "padright") {
+        emit("[](const std::string& s, int width, char pad = ' ') { return width <= static_cast<int>(s.length()) ? s : s + std::string(width - s.length(), pad); }(");
+        if (node.getArguments().size() >= 2) {
+            node.getArguments()[0]->accept(*this); // string
+            emit(", ");
+            node.getArguments()[1]->accept(*this); // width
+            if (node.getArguments().size() >= 3) {
+                emit(", ");
+                node.getArguments()[2]->accept(*this); // padding char
+            }
         }
         emit(")");
         return true;

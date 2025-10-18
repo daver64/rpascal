@@ -16,27 +16,27 @@ begin
   writeln('Trim: "', trim(s), '"');
   writeln('TrimLeft: "', trimleft(s), '"');
   writeln('TrimRight: "', trimright(s), '"');
-  writeln;
+  writeln();
   
   { Test stringofchar }
   ch := '*';
   result := stringofchar(ch, 10);
   writeln('StringOfChar(''*'', 10): "', result, '"');
-  writeln;
+  writeln();
   
   { Test case conversion }
   s := 'Hello World';
   writeln('Original: "', s, '"');
   writeln('Lowercase: "', lowercase(s), '"');
   writeln('Uppercase: "', uppercase(s), '"');
-  writeln;
+  writeln();
   
   { Test left/right string functions }
   s := 'Programming';
   writeln('Original: "', s, '"');
   writeln('LeftStr(5): "', leftstr(s, 5), '"');
   writeln('RightStr(4): "', rightstr(s, 4), '"');
-  writeln;
+  writeln();
   
   { Test padding functions }
   s := 'Test';
@@ -45,7 +45,7 @@ begin
   writeln('PadRight(10): "', padright(s, 10), '"');
   writeln('PadLeft(10, ''.'') : "', padleft(s, 10, '.'), '"');
   writeln('PadRight(10, ''-''): "', padright(s, 10, '-'), '"');
-  writeln;
+  writeln();
   
   { Test with existing functions }
   s := 'Pascal Programming';

@@ -433,6 +433,12 @@ std::unique_ptr<ProcedureDeclaration> Parser::parseProcedureDeclaration(bool isI
         consume(TokenType::RIGHT_PAREN, "Expected ')' after parameters");
     }
     
+    // Check for overload directive before semicolon
+    bool isOverloaded = false;
+    if (match(TokenType::OVERLOAD)) {
+        isOverloaded = true;
+    }
+    
     consume(TokenType::SEMICOLON, "Expected ';' after procedure header");
     
     // In interface section, we only need the signature
@@ -440,7 +446,7 @@ std::unique_ptr<ProcedureDeclaration> Parser::parseProcedureDeclaration(bool isI
         std::vector<std::unique_ptr<VariableDeclaration>> localVariables;
         std::vector<std::unique_ptr<Declaration>> nestedDeclarations;
         auto body = std::make_unique<CompoundStatement>(std::vector<std::unique_ptr<Statement>>());
-        return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(nestedDeclarations), std::move(body), true);
+        return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(nestedDeclarations), std::move(body), true, isOverloaded);
     }
     
     // Check for forward declaration
@@ -450,7 +456,7 @@ std::unique_ptr<ProcedureDeclaration> Parser::parseProcedureDeclaration(bool isI
         std::vector<std::unique_ptr<VariableDeclaration>> localVariables;
         std::vector<std::unique_ptr<Declaration>> nestedDeclarations;
         auto body = std::make_unique<CompoundStatement>(std::vector<std::unique_ptr<Statement>>());
-        return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(nestedDeclarations), std::move(body), true);
+        return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(nestedDeclarations), std::move(body), true, isOverloaded);
     }
     
     // Parse local variables (optional var section)
@@ -462,7 +468,7 @@ std::unique_ptr<ProcedureDeclaration> Parser::parseProcedureDeclaration(bool isI
     auto body = parseCompoundStatement();
     consume(TokenType::SEMICOLON, "Expected ';' after procedure body");
     
-    return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(nestedDeclarations), std::move(body));
+    return std::make_unique<ProcedureDeclaration>(nameToken.getValue(), std::move(parameters), std::move(localVariables), std::move(nestedDeclarations), std::move(body), false, isOverloaded);
 }
 
 std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration(bool isInterface) {
@@ -478,12 +484,19 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration(bool isInt
     std::string returnType = parseTypeName();
     consume(TokenType::SEMICOLON, "Expected ';' after function header");
     
+    // Check for overload directive after semicolon
+    bool isOverloaded = false;
+    if (match(TokenType::OVERLOAD)) {
+        isOverloaded = true;
+        consume(TokenType::SEMICOLON, "Expected ';' after 'overload'");
+    }
+    
     // In interface section, we only need the signature
     if (isInterface) {
         std::vector<std::unique_ptr<VariableDeclaration>> localVariables;
         std::vector<std::unique_ptr<Declaration>> nestedDeclarations;
         auto body = std::make_unique<CompoundStatement>(std::vector<std::unique_ptr<Statement>>());
-        return std::make_unique<FunctionDeclaration>(nameToken.getValue(), std::move(parameters), returnType, std::move(localVariables), std::move(nestedDeclarations), std::move(body), true);
+        return std::make_unique<FunctionDeclaration>(nameToken.getValue(), std::move(parameters), returnType, std::move(localVariables), std::move(nestedDeclarations), std::move(body), true, isOverloaded);
     }
     
     // Check for forward declaration
@@ -493,7 +506,7 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration(bool isInt
         std::vector<std::unique_ptr<VariableDeclaration>> localVariables;
         std::vector<std::unique_ptr<Declaration>> nestedDeclarations;
         auto body = std::make_unique<CompoundStatement>(std::vector<std::unique_ptr<Statement>>());
-        return std::make_unique<FunctionDeclaration>(nameToken.getValue(), std::move(parameters), returnType, std::move(localVariables), std::move(nestedDeclarations), std::move(body), true);
+        return std::make_unique<FunctionDeclaration>(nameToken.getValue(), std::move(parameters), returnType, std::move(localVariables), std::move(nestedDeclarations), std::move(body), true, isOverloaded);
     }
     
     // Parse local variables (optional var section)
@@ -505,7 +518,7 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration(bool isInt
     auto body = parseCompoundStatement();
     consume(TokenType::SEMICOLON, "Expected ';' after function body");
     
-    return std::make_unique<FunctionDeclaration>(nameToken.getValue(), std::move(parameters), returnType, std::move(localVariables), std::move(nestedDeclarations), std::move(body));
+    return std::make_unique<FunctionDeclaration>(nameToken.getValue(), std::move(parameters), returnType, std::move(localVariables), std::move(nestedDeclarations), std::move(body), false, isOverloaded);
 }
 
 std::unique_ptr<Statement> Parser::parseStatement() {
@@ -550,6 +563,47 @@ std::unique_ptr<Statement> Parser::parseStatement() {
                     return std::make_unique<AssignmentStatement>(std::move(expr), std::move(value));
                 } else {
                     return std::make_unique<ExpressionStatement>(std::move(expr));
+                }
+            }
+        } else if (check(TokenType::IDENTIFIER)) {
+            // Check if this is a label (identifier followed by colon)
+            Token labelToken = currentToken_;
+            advance();
+            if (match(TokenType::COLON)) {
+                // This is a label - create a compound statement with the label and the following statement
+                std::vector<std::unique_ptr<Statement>> statements;
+                statements.push_back(std::make_unique<LabelStatement>(labelToken.getValue()));
+                
+                // Parse the statement that follows the label
+                auto followingStmt = parseStatement();
+                if (followingStmt) {
+                    statements.push_back(std::move(followingStmt));
+                }
+                
+                return std::make_unique<CompoundStatement>(std::move(statements));
+            } else {
+                // Not a label, check if it's a procedure call
+                if (match(TokenType::LEFT_PAREN)) {
+                    // This is a procedure call
+                    std::vector<std::unique_ptr<Expression>> arguments;
+                    if (!check(TokenType::RIGHT_PAREN)) {
+                        do {
+                            arguments.push_back(parseExpression());
+                        } while (match(TokenType::COMMA));
+                    }
+                    consume(TokenType::RIGHT_PAREN, "Expected ')' after procedure arguments");
+                    auto callee = std::make_unique<IdentifierExpression>(labelToken.getValue());
+                    auto callExpr = std::make_unique<CallExpression>(std::move(callee), std::move(arguments));
+                    return std::make_unique<ExpressionStatement>(std::move(callExpr));
+                } else {
+                    // Not a procedure call, backtrack by creating an identifier expression
+                    auto expr = std::make_unique<IdentifierExpression>(labelToken.getValue());
+                    if (match(TokenType::ASSIGN)) {
+                        auto value = parseExpression();
+                        return std::make_unique<AssignmentStatement>(std::move(expr), std::move(value));
+                    } else {
+                        return std::make_unique<ExpressionStatement>(std::move(expr));
+                    }
                 }
             }
         } else {
@@ -1359,7 +1413,12 @@ std::unique_ptr<LabelDeclaration> Parser::parseLabelDeclaration() {
     std::vector<std::string> labels;
     
     do {
-        Token labelToken = consume(TokenType::INTEGER_LITERAL, "Expected label number");
+        Token labelToken;
+        if (check(TokenType::INTEGER_LITERAL)) {
+            labelToken = consume(TokenType::INTEGER_LITERAL, "Expected label number");
+        } else {
+            labelToken = consume(TokenType::IDENTIFIER, "Expected label identifier");
+        }
         labels.push_back(labelToken.getValue());
     } while (match(TokenType::COMMA));
     
@@ -1370,7 +1429,12 @@ std::unique_ptr<LabelDeclaration> Parser::parseLabelDeclaration() {
 
 std::unique_ptr<GotoStatement> Parser::parseGotoStatement() {
     // 'goto' token already consumed
-    Token targetToken = consume(TokenType::INTEGER_LITERAL, "Expected label number after goto");
+    Token targetToken;
+    if (check(TokenType::INTEGER_LITERAL)) {
+        targetToken = consume(TokenType::INTEGER_LITERAL, "Expected label number after goto");
+    } else {
+        targetToken = consume(TokenType::IDENTIFIER, "Expected label identifier after goto");
+    }
     return std::make_unique<GotoStatement>(targetToken.getValue());
 }
 

@@ -60,10 +60,8 @@ void SemanticAnalyzer::visit(LiteralExpression& node) {
 }
 
 void SemanticAnalyzer::visit(IdentifierExpression& node) {
-    std::cout << "DEBUG: Looking up identifier: " << node.getName() << " at scope level: " << symbolTable_->getCurrentScopeLevel() << std::endl;
     auto symbol = symbolTable_->lookup(node.getName());
     if (!symbol) {
-        std::cout << "DEBUG: Symbol not found in symbol table for: " << node.getName() << std::endl;
         
         // Check if this is a built-in constant (CRT colors, etc.)
         if (isBuiltinConstant(node.getName())) {
@@ -130,7 +128,6 @@ void SemanticAnalyzer::visit(IdentifierExpression& node) {
         }
         
         if (!foundInWithContext) {
-            std::cout << "DEBUG: About to add error for undefined identifier: " << node.getName() << std::endl;
             addError("Undefined identifier: " + node.getName());
             currentExpressionType_ = DataType::UNKNOWN;
             currentExpressionTypeName_ = "";
@@ -854,9 +851,6 @@ void SemanticAnalyzer::visit(ProcedureDeclaration& node) {
             addError("Procedure '" + node.getName() + "' with this signature already declared");
             return;
         }
-        
-        std::cout << "DEBUG: Creating forward declaration symbol for procedure: " << node.getName() << std::endl;
-        std::cout << "DEBUG: Current scope level: " << symbolTable_->getCurrentScopeLevel() << std::endl;
         
         // Create procedure symbol for forward declaration
         auto procedureSymbol = std::make_shared<Symbol>(node.getName(), SymbolType::PROCEDURE, DataType::VOID, 
@@ -1620,47 +1614,33 @@ std::string SemanticAnalyzer::getFieldTypeFromRecord(const std::string& fieldNam
 }
 
 void SemanticAnalyzer::visit(UsesClause& node) {
-    std::cout << "DEBUG: Processing UsesClause, current scope level: " << symbolTable_->getCurrentScopeLevel() << std::endl;
     // Load and process units
     for (const std::string& unitName : node.getUnits()) {
-        std::cout << "DEBUG: Processing unit: " << unitName << std::endl;
-        
         // Check if unit is a standard unit (System, Dos, Crt)
         if (unitName == "System" || unitName == "Dos" || unitName == "Crt") {
-            std::cout << "DEBUG: " << unitName << " is a built-in unit" << std::endl;
             // Built-in units are handled automatically
             continue;
         }
         
-        std::cout << "DEBUG: Attempting to load custom unit: " << unitName << std::endl;
-        
         // Try to load custom unit
         if (!unitLoader_->isUnitLoaded(unitName)) {
-            std::cout << "DEBUG: Unit not loaded, loading now..." << std::endl;
             unitLoader_->loadUnit(unitName);
             
             // Check if loading succeeded
             if (!unitLoader_->isUnitLoaded(unitName)) {
-                std::cout << "DEBUG: Failed to load unit " << unitName << std::endl;
                 addError("Failed to load unit: " + unitName);
                 continue;
             }
-            std::cout << "DEBUG: Successfully loaded unit " << unitName << std::endl;
         }
         
         // Get the loaded unit and process its interface declarations
         Unit* loadedUnit = unitLoader_->getLoadedUnit(unitName);
         if (loadedUnit) {
-            std::cout << "DEBUG: Processing interface declarations for " << unitName << std::endl;
-            std::cout << "DEBUG: Scope level before processing interface: " << symbolTable_->getCurrentScopeLevel() << std::endl;
             // Import symbols from the unit's interface section
             for (const auto& decl : loadedUnit->getInterfaceDeclarations()) {
-                std::cout << "DEBUG: Processing interface declaration: " << decl->toString() << std::endl;
                 // Process the declaration to add symbols to our symbol table
                 decl->accept(*this);
             }
-        } else {
-            std::cout << "DEBUG: Could not get loaded unit " << unitName << std::endl;
         }
     }
 }

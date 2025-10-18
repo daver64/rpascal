@@ -603,11 +603,12 @@ public:
                         std::vector<std::unique_ptr<VariableDeclaration>> localVariables,
                         std::vector<std::unique_ptr<Declaration>> nestedDeclarations,
                         std::unique_ptr<CompoundStatement> body,
-                        bool isForward = false)
+                        bool isForward = false,
+                        bool isOverloaded = false)
         : name_(name), parameters_(std::move(parameters)), 
           localVariables_(std::move(localVariables)), 
           nestedDeclarations_(std::move(nestedDeclarations)),
-          body_(std::move(body)), isForward_(isForward) {}
+          body_(std::move(body)), isForward_(isForward), isOverloaded_(isOverloaded) {}
     
     void accept(ASTVisitor& visitor) override;
     std::string toString() const override;
@@ -618,6 +619,7 @@ public:
     const std::vector<std::unique_ptr<Declaration>>& getNestedDeclarations() const { return nestedDeclarations_; }
     CompoundStatement* getBody() const { return body_.get(); }
     bool isForward() const { return isForward_; }
+    bool isOverloaded() const { return isOverloaded_; }
     
 private:
     std::string name_;
@@ -626,6 +628,7 @@ private:
     std::vector<std::unique_ptr<Declaration>> nestedDeclarations_;
     std::unique_ptr<CompoundStatement> body_;
     bool isForward_;
+    bool isOverloaded_;
 };
 
 class FunctionDeclaration : public Declaration {
@@ -636,11 +639,12 @@ public:
                        std::vector<std::unique_ptr<VariableDeclaration>> localVariables,
                        std::vector<std::unique_ptr<Declaration>> nestedDeclarations,
                        std::unique_ptr<CompoundStatement> body,
-                       bool isForward = false)
+                       bool isForward = false,
+                       bool isOverloaded = false)
         : name_(name), parameters_(std::move(parameters)), 
           returnType_(returnType), localVariables_(std::move(localVariables)), 
           nestedDeclarations_(std::move(nestedDeclarations)),
-          body_(std::move(body)), isForward_(isForward) {}
+          body_(std::move(body)), isForward_(isForward), isOverloaded_(isOverloaded) {}
     
     void accept(ASTVisitor& visitor) override;
     std::string toString() const override;
@@ -652,6 +656,7 @@ public:
     const std::vector<std::unique_ptr<Declaration>>& getNestedDeclarations() const { return nestedDeclarations_; }
     CompoundStatement* getBody() const { return body_.get(); }
     bool isForward() const { return isForward_; }
+    bool isOverloaded() const { return isOverloaded_; }
     
 private:
     std::string name_;
@@ -661,6 +666,7 @@ private:
     std::vector<std::unique_ptr<Declaration>> nestedDeclarations_;
     std::unique_ptr<CompoundStatement> body_;
     bool isForward_;
+    bool isOverloaded_;
 };
 
 // Uses clause for unit imports

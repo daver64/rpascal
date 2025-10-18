@@ -78,14 +78,10 @@ std::string UnitLoader::findUnitFile(const std::string& unitName) {
     // Try different file extensions and paths
     std::vector<std::string> extensions = {".pas", ".pp", ".p"};
     
-    std::cout << "DEBUG: Searching for unit " << unitName << " in paths:" << std::endl;
     for (const auto& searchPath : searchPaths_) {
-        std::cout << "DEBUG: Checking path: " << searchPath << std::endl;
         for (const auto& ext : extensions) {
             std::filesystem::path fullPath = std::filesystem::path(searchPath) / (unitName + ext);
-            std::cout << "DEBUG: Trying: " << fullPath.string() << std::endl;
             if (std::filesystem::exists(fullPath)) {
-                std::cout << "DEBUG: Found unit file: " << fullPath.string() << std::endl;
                 return fullPath.string();
             }
             
@@ -94,15 +90,12 @@ std::string UnitLoader::findUnitFile(const std::string& unitName) {
             std::transform(lowerUnitName.begin(), lowerUnitName.end(), lowerUnitName.begin(), 
                           [](char c) { return static_cast<char>(std::tolower(c)); });
             std::filesystem::path lowerPath = std::filesystem::path(searchPath) / (lowerUnitName + ext);
-            std::cout << "DEBUG: Trying lowercase: " << lowerPath.string() << std::endl;
             if (std::filesystem::exists(lowerPath)) {
-                std::cout << "DEBUG: Found unit file (lowercase): " << lowerPath.string() << std::endl;
                 return lowerPath.string();
             }
         }
     }
     
-    std::cout << "DEBUG: Unit file not found for " << unitName << std::endl;
     return ""; // Not found
 }
 

@@ -44,13 +44,16 @@ type
     active: boolean;
   end;
   
+  { Enumeration for variant records }
+  TShapeKind = (Circle, Rectangle, Triangle);
+  
   { Variant Records }
   TShape = record
-    kind: (Circle, Rectangle, Triangle);
-    case integer of
-      1: (radius: real);
-      2: (width, height: real);
-      3: (side1, side2, side3: real);
+    kind: TShapeKind;
+    case kind: TShapeKind of
+      Circle: (radius: real);
+      Rectangle: (width, height: real);
+      Triangle: (side1, side2, side3: real);
   end;
   
   { Pointer Types }
@@ -66,9 +69,9 @@ type
   TIntFile = file of integer;
   TByteFile = file;
   
-  { Procedure/Function Types }
-  TIntFunction = function(x: integer): integer;
-  TProcedure = procedure(var x: integer);
+  { Procedure/Function Types - not yet supported }
+  { TIntFunction = function(x: integer): integer; }
+  { TProcedure = procedure(var x: integer); }
 
 { === VARIABLES === }
 var
@@ -118,7 +121,7 @@ var
     innerVar: integer;
   begin
     innerVar := localVar + 1;
-    writeln('Inner: ', innerVar);
+        writeln('Inner: ', innerVar);
   end;
   
 begin
@@ -240,16 +243,16 @@ begin
   result := concat(s1, ' ', s2);
   writeln('Concat: ', result);
   
-  pos := pos('ll', s1);
+  pos := Pos('ll', s1);
   writeln('Position of "ll": ', pos);
   
-  result := copy(s1, 2, 3);
+  result := Copy(s1, 1, 4);
   writeln('Copy: ', result);
   
-  delete(s1, 2, 2);
+  Delete(s1, 1, 6);
   writeln('After delete: ', s1);
   
-  insert('i', s1, 2);
+  Insert('Hi ', s1, 1);
   writeln('After insert: ', s1);
 end;
 
