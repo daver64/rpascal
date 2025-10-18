@@ -26,6 +26,7 @@ RPascal includes built-in implementations of standard Turbo Pascal units:
 - **System**: Core runtime functions (`writeln`, `readln`, `new`, `dispose`, etc.)
 - **CRT**: Console/screen functions (`clrscr`, `gotoxy`, `textcolor`, etc.)
 - **DOS**: File system functions (`fileexists`, `findfirst`, `findnext`, etc.)
+- **strings**: String manipulation functions (`strcat`, `strcopy`, `strcomp`, `strlen`, etc.) - lowercase as deliberate TP departure
 
 ### Advanced Features
 - **Built-in Functions**: `succ()`, `pred()`, `ord()`, `chr()`, string functions
@@ -57,20 +58,25 @@ cmake ..
 cmake --build . --config Release
 ```
 
-The compiler executable will be created as `bin/rpascal.exe` (Windows) or `bin/rpascal` (Unix).
+The compiler executable will be created as `bin/rpascal.exe` on Windows, or `bin/rpascal` on Unix-like systems.
 
 ## Usage
 
 ### Basic Compilation
 ```bash
-# Compile a Pascal program
+# Compile a Pascal program (Linux/macOS)
 ./bin/rpascal program.pas
+
+# Compile a Pascal program (Windows - PowerShell or cmd)
+bin\rpascal.exe program.pas
 
 # Keep intermediate C++ file for debugging
 ./bin/rpascal --keep-cpp program.pas
 
-# Specify custom output name
-./bin/rpascal -o myprogram.exe program.pas
+# Specify custom output name (include .exe on Windows if desired)
+./bin/rpascal -o myprogram program.pas
+# or on Windows
+bin\rpascal.exe -o myprogram.exe program.pas
 
 # Verbose output
 ./bin/rpascal -v program.pas
@@ -89,14 +95,25 @@ The compiler executable will be created as `bin/rpascal.exe` (Windows) or `bin/r
 RPascal includes a comprehensive test suite covering major language features:
 
 ```bash
-# Run individual tests
+# Run individual tests (Linux/macOS)
 ./bin/rpascal tests/test_arrays.pas
 ./bin/rpascal tests/test_records.pas
 ./bin/rpascal tests/test_enumerations.pas
 
-# Run comprehensive test suite
-./bin/rpascal tests/test_comprehensive.pas
-./tests/test_comprehensive.exe
+# Run individual tests (Windows - PowerShell or cmd)
+bin\rpascal.exe tests\test_arrays.pas
+bin\rpascal.exe tests\test_records.pas
+bin\rpascal.exe tests\test_enumerations.pas
+
+# Run the full cross-platform test runner included with the repo
+# On Unix-like systems (Linux/macOS):
+./run_tests.sh
+
+# On Windows (cmd.exe / PowerShell):
+run_tests.bat
+
+# The test runner compiles and executes each test; when successful it
+# will remove intermediate executables and print PASSED/FAILED status.
 ```
 
 Current test coverage includes:
@@ -130,7 +147,7 @@ As alpha software, RPascal has several known limitations:
 - **Incomplete Language Coverage**: Some advanced Pascal features are not yet implemented
 - **Error Handling**: Error messages could be more descriptive and user-friendly  
 - **Performance**: Generated code is functional but not yet optimized for performance
-- **Platform Support**: Primarily tested on Windows; Unix support may be incomplete
+- **Platform Support**: Tested on Windows and Linux. The included test runner scripts (`run_tests.bat` and `run_tests.sh`) execute the full test suite; recent runs completed successfully on both platforms with no errors.
 - **Memory Management**: Some edge cases in dynamic memory handling may exist
 - **Complex Expressions**: Very complex nested expressions may not parse correctly
 - **Unit System**: Only basic built-in units are supported; custom units have limitations

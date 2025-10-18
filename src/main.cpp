@@ -44,7 +44,7 @@ void showHelp(const std::string& programName) {
               << ".exe"
 #endif  
               << ")\n";
-    std::cout << "  --keep-cpp    Keep intermediate C++ file after compilation\n";
+    std::cout << "  --keep-cpp    Keep intermediate files (.cpp, .obj/.o) after compilation\n";
     std::cout << "  -v            Verbose output\n";
     std::cout << "  --tokens      Show tokenization output\n";
     std::cout << "  --ast         Show Abstract Syntax Tree\n";
@@ -652,8 +652,9 @@ int compile(const CompilerOptions& options) {
             std::cout << "Executable created: " << options.outputFile << "\n";
         }
         
-        // Remove C++ file unless user wants to keep it
+        // Remove intermediate files unless user wants to keep them
         if (!options.keepCpp) {
+            // Remove C++ file
             try {
                 std::filesystem::remove(options.cppFile);
                 if (options.verbose) {
@@ -662,6 +663,42 @@ int compile(const CompilerOptions& options) {
             } catch (const std::exception& e) {
                 if (options.verbose) {
                     std::cout << "Warning: Could not remove C++ file: " << e.what() << "\n";
+                }
+            }
+            
+            // Remove potential intermediate object files
+            // MSVC creates .obj files in the current working directory
+            // GCC/Clang typically also create .o files in the current directory
+            std::filesystem::path cppPath(options.cppFile);
+            std::string baseName = cppPath.stem().string();
+            
+            // Try to remove .obj file (MSVC) - check current directory first
+            std::string objFile = baseName + ".obj";
+            try {
+                if (std::filesystem::exists(objFile)) {
+                    std::filesystem::remove(objFile);
+                    if (options.verbose) {
+                        std::cout << "Removed intermediate object file: " << objFile << "\n";
+                    }
+                }
+            } catch (const std::exception& e) {
+                if (options.verbose) {
+                    std::cout << "Warning: Could not remove .obj file: " << e.what() << "\n";
+                }
+            }
+            
+            // Try to remove .o file (GCC/Clang) - check current directory first
+            std::string oFile = baseName + ".o";
+            try {
+                if (std::filesystem::exists(oFile)) {
+                    std::filesystem::remove(oFile);
+                    if (options.verbose) {
+                        std::cout << "Removed intermediate object file: " << oFile << "\n";
+                    }
+                }
+            } catch (const std::exception& e) {
+                if (options.verbose) {
+                    std::cout << "Warning: Could not remove .o file: " << e.what() << "\n";
                 }
             }
         }

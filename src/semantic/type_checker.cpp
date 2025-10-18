@@ -2196,7 +2196,14 @@ bool SemanticAnalyzer::isBuiltinFunction(const std::string& functionName) {
            lowerName == "findnext" || lowerName == "findclose" || lowerName == "getcurrentdir" ||
            lowerName == "setcurrentdir" || lowerName == "directoryexists" || lowerName == "mkdir" ||
            lowerName == "rmdir" || lowerName == "getdate" || lowerName == "gettime" ||
-           lowerName == "getdatetime" || lowerName == "getenv" || lowerName == "exec";
+           lowerName == "getdatetime" || lowerName == "getenv" || lowerName == "exec" ||
+           // Strings unit functions
+           lowerName == "strcat" || lowerName == "strcopy" || lowerName == "strcomp" ||
+           lowerName == "stricomp" || lowerName == "strlen" || lowerName == "strpos" ||
+           lowerName == "strrpos" || lowerName == "strlower" || lowerName == "strupper" ||
+           lowerName == "strmove" || lowerName == "strnew" || lowerName == "strdispose" ||
+           lowerName == "strpcopy" || lowerName == "strpas" || lowerName == "strscan" ||
+           lowerName == "strrscan";
 }
 
 bool SemanticAnalyzer::isBuiltinConstant(const std::string& constantName) {
@@ -2240,7 +2247,10 @@ void SemanticAnalyzer::handleBuiltinFunction(const std::string& functionName, Ca
         // DOS procedures (no return value)
         lowerName == "findfirst" || lowerName == "findnext" || lowerName == "findclose" ||
         lowerName == "setcurrentdir" || lowerName == "mkdir" || lowerName == "rmdir" ||
-        lowerName == "getdatetime") {
+        lowerName == "getdatetime" ||
+        // Strings unit procedures (void return)
+        lowerName == "strcat" || lowerName == "strcopy" || lowerName == "strmove" ||
+        lowerName == "strdispose" || lowerName == "strpcopy") {
         currentExpressionType_ = DataType::VOID;
     } else if (lowerName == "length" || lowerName == "ord" || lowerName == "pos" ||
                lowerName == "paramcount" || lowerName == "abs" ||
@@ -2252,7 +2262,9 @@ void SemanticAnalyzer::handleBuiltinFunction(const std::string& functionName, Ca
                lowerName == "strtoint" ||
                // DOS functions returning integer
                lowerName == "filesize" || lowerName == "getdate" || lowerName == "gettime" ||
-               lowerName == "exec") {
+               lowerName == "exec" ||
+               // Strings unit functions returning integer
+               lowerName == "strlen" || lowerName == "strcomp" || lowerName == "stricomp") {
         currentExpressionType_ = DataType::INTEGER;
     } else if (lowerName == "chr" ||
                // CRT functions returning char
@@ -2268,7 +2280,9 @@ void SemanticAnalyzer::handleBuiltinFunction(const std::string& functionName, Ca
                // Conversion functions returning string
                lowerName == "inttostr" || lowerName == "floattostr" ||
                // DOS functions returning string
-               lowerName == "getcurrentdir" || lowerName == "getenv") {
+               lowerName == "getcurrentdir" || lowerName == "getenv" ||
+               // Strings unit functions returning string
+               lowerName == "strpas") {
         currentExpressionType_ = DataType::STRING;
     } else if (lowerName == "sqr" || lowerName == "sqrt" || lowerName == "sin" ||
                lowerName == "cos" || lowerName == "arctan" || lowerName == "ln" ||
@@ -2284,6 +2298,11 @@ void SemanticAnalyzer::handleBuiltinFunction(const std::string& functionName, Ca
                // DOS functions returning boolean
                lowerName == "fileexists" || lowerName == "directoryexists") {
         currentExpressionType_ = DataType::BOOLEAN;
+    } else if (// Strings unit functions returning pointer (char*)
+               lowerName == "strpos" || lowerName == "strrpos" || lowerName == "strlower" ||
+               lowerName == "strupper" || lowerName == "strnew" || lowerName == "strscan" ||
+               lowerName == "strrscan") {
+        currentExpressionType_ = DataType::POINTER;
     } else if (lowerName == "filepos" || lowerName == "filesize" || lowerName == "ioresult") {
         // File position and I/O error functions return integer
         currentExpressionType_ = DataType::INTEGER;

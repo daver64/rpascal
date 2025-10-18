@@ -142,6 +142,12 @@ private:
     std::string generateParameterList(const std::vector<std::unique_ptr<VariableDeclaration>>& parameters);
     std::string generateMangledFunctionName(const std::string& functionName, const std::vector<std::unique_ptr<VariableDeclaration>>& parameters);
     
+    // Output helper for writeln/write
+    void emitForOutput(Expression* expr);
+    
+    // String argument helper for string functions
+    void emitStringArgument(Expression* expr);
+    
     // Utility methods
     bool isBuiltinFunction(const std::string& name);
     bool isBuiltinConstant(const std::string& name);

@@ -29,7 +29,7 @@ std::unique_ptr<Unit> UnitLoader::loadUnit(const std::string& unitName) {
     std::transform(lowerUnitName.begin(), lowerUnitName.end(), lowerUnitName.begin(), 
                    [](char c) { return static_cast<char>(std::tolower(c)); });
     
-    if (lowerUnitName == "dos" || lowerUnitName == "crt" || lowerUnitName == "system") {
+    if (lowerUnitName == "dos" || lowerUnitName == "crt" || lowerUnitName == "system" || lowerUnitName == "strings") {
         // Create a synthetic unit for built-in units
         // These units don't need actual parsing - their functions are handled by the compiler
         auto unit = std::make_unique<Unit>(unitName,

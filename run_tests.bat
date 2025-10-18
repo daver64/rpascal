@@ -162,15 +162,14 @@ if exist %TESTS_DIR%\test_labels_goto.exe (
 echo.
 
 echo --- Test 13: Comprehensive Test Suite (Disabled - has advanced features) ---
-REM %RPASCAL% %TESTS_DIR%\test_comprehensive.pas
-REM if exist %TESTS_DIR%\test_comprehensive.exe (
-REM     %TESTS_DIR%\test_comprehensive.exe
-REM     del %TESTS_DIR%\test_comprehensive.exe >nul 2>&1
-REM     echo PASSED: Comprehensive test suite
-REM ) else (
-REM     echo FAILED: Comprehensive test suite failed to compile
-REM )
-echo SKIPPED: Comprehensive test (requires advanced features)
+%RPASCAL% %TESTS_DIR%\test_comprehensive.pas
+if exist %TESTS_DIR%\test_comprehensive.exe (
+     %TESTS_DIR%\test_comprehensive.exe
+    del %TESTS_DIR%\test_comprehensive.exe >nul 2>&1
+    echo PASSED: Comprehensive test suite
+) else (
+    echo FAILED: Comprehensive test suite failed to compile
+)
 echo.
 
 echo --- Test 14: TP7 Compatibility (May have some failures) ---
