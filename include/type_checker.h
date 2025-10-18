@@ -106,7 +106,7 @@ private:
     bool isValidUnaryOperation(DataType operandType, TokenType operator_);
     bool isValidBinaryOperation(DataType leftType, DataType rightType, TokenType operator_);
     void checkFunctionCall(CallExpression& node);
-    void checkAssignment(Expression* target, Expression* value);
+    void checkAssignment(Expression* target, Expression* value, const SourceLocation& location = SourceLocation{});
     bool isFieldInRecordDefinition(const std::string& fieldName, const std::string& recordDef);
     std::string getFieldTypeFromRecord(const std::string& fieldName, const std::string& recordDef);
     

@@ -29,7 +29,8 @@ void CppGenerator::visit(LiteralExpression& node) {
             break;
         case TokenType::CHAR_LITERAL:
             // Handle Pascal char literals like #65
-            if (token.getValue().front() == '#') {
+            if (token.getValue().front() == '#' && token.getValue().length() > 1 && 
+                std::isdigit(token.getValue()[1])) {
                 std::string numStr = token.getValue().substr(1);
                 emit("static_cast<char>(" + numStr + ")");
             } else {
@@ -839,11 +840,54 @@ void CppGenerator::visit(CaseStatement& node) {
                             emitLine("case " + std::to_string(i) + ":");
                         }
                     } else {
-                        // Fallback: emit comment
-                        emitIndent();
-                        emit("/* case ");
-                        value->accept(*this);
-                        emitLine(": */");
+                        // Handle enum ranges - for now, generate individual case labels
+                        // This is a simplified approach that works for enum ranges like Monday..Friday
+                        auto leftIdent = dynamic_cast<IdentifierExpression*>(binaryExpr->getLeft());
+                        auto rightIdent = dynamic_cast<IdentifierExpression*>(binaryExpr->getRight());
+                        
+                        if (leftIdent && rightIdent) {
+                            // Generate case labels for enum range
+                            // For simplicity, assume Monday=0, Tuesday=1, etc. and generate all cases
+                            std::string startEnum = leftIdent->getName();
+                            std::string endEnum = rightIdent->getName();
+                            
+                            // Map common day enums to their ordinal values
+                            std::map<std::string, int> dayOrdinals = {
+                                {"Monday", 0}, {"Tuesday", 1}, {"Wednesday", 2}, 
+                                {"Thursday", 3}, {"Friday", 4}, {"Saturday", 5}, {"Sunday", 6}
+                            };
+                            
+                            if (dayOrdinals.find(startEnum) != dayOrdinals.end() && 
+                                dayOrdinals.find(endEnum) != dayOrdinals.end()) {
+                                int start = dayOrdinals[startEnum];
+                                int end = dayOrdinals[endEnum];
+                                
+                                for (int i = start; i <= end; ++i) {
+                                    emitIndent();
+                                    // Find enum name by ordinal value
+                                    for (const auto& pair : dayOrdinals) {
+                                        if (pair.second == i) {
+                                            emitLine("case " + pair.first + ":");
+                                            break;
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Fallback: emit as individual case values without nested comments
+                                emitIndent();
+                                emit("case ");
+                                leftIdent->accept(*this);
+                                emitLine(":");
+                                emitIndent();
+                                emit("case ");
+                                rightIdent->accept(*this);
+                                emitLine(":");
+                            }
+                        } else {
+                            // Final fallback: emit single line comment instead of nested comments
+                            emitIndent();
+                            emitLine("// TODO: Handle complex range case");
+                        }
                     }
                     continue;
                 }
@@ -1713,8 +1757,10 @@ void CppGenerator::generateFunctionCall(CallExpression& node) {
         // For overloaded functions, we need to resolve which one to call
         // Build argument types for proper overload resolution
         std::vector<DataType> argTypes;
+        std::vector<std::string> argTypeNames; // Store actual type names for custom types
         for (const auto& arg : node.getArguments()) {
             DataType argType = DataType::UNKNOWN;
+            std::string argTypeName;
             
             // Try to determine argument type
             if (auto literal = dynamic_cast<LiteralExpression*>(arg.get())) {
@@ -1733,6 +1779,7 @@ void CppGenerator::generateFunctionCall(CallExpression& node) {
                 auto symbol = symbolTable_->lookup(identifier->getName());
                 if (symbol) {
                     argType = symbol->getDataType();
+                    argTypeName = symbol->getTypeName();
                     // For CUSTOM types, check if it's a known enum type
                     if (argType == DataType::CUSTOM && !symbol->getTypeName().empty()) {
                         // Keep CUSTOM but the type name will be used in mangling
@@ -1744,10 +1791,29 @@ void CppGenerator::generateFunctionCall(CallExpression& node) {
                         argType = DataType::INTEGER; // Enum constants are treated as integers
                     }
                 }
+            } else if (auto arrayAccess = dynamic_cast<ArrayIndexExpression*>(arg.get())) {
+                // Handle array element access - need to determine element type
+                if (auto arrayIdentifier = dynamic_cast<IdentifierExpression*>(arrayAccess->getArray())) {
+                    auto arraySymbol = symbolTable_->lookup(arrayIdentifier->getName());
+                    if (arraySymbol) {
+                        // For arrays, we need to extract the element type from the array type
+                        std::string arrayTypeName = arraySymbol->getTypeName();
+                        if (arrayTypeName.find("array[") == 0) {
+                            // Extract element type from "array[...] of ElementType"
+                            size_t ofPos = arrayTypeName.find(" of ");
+                            if (ofPos != std::string::npos) {
+                                std::string elementTypeName = arrayTypeName.substr(ofPos + 4);
+                                argType = symbolTable_->resolveDataType(elementTypeName);
+                                argTypeName = elementTypeName; // Preserve the actual type name
+                            }
+                        }
+                    }
+                }
             }
             // TODO: Handle other expression types (array access, field access, etc.)
             
             argTypes.push_back(argType);
+            argTypeNames.push_back(argTypeName);
         }
         
         // Try to find the matching function overload
@@ -1760,12 +1826,17 @@ void CppGenerator::generateFunctionCall(CallExpression& node) {
             for (size_t i = 0; i < argTypes.size(); ++i) {
                 std::string paramType;
                 
-                // Try to get the actual type name from the argument if possible
-                if (i < node.getArguments().size()) {
-                    if (auto identifier = dynamic_cast<IdentifierExpression*>(node.getArguments()[i].get())) {
-                        auto symbol = symbolTable_->lookup(identifier->getName());
-                        if (symbol && !symbol->getTypeName().empty()) {
-                            paramType = symbol->getTypeName();
+                // Use the preserved type name if available
+                if (i < argTypeNames.size() && !argTypeNames[i].empty()) {
+                    paramType = argTypeNames[i];
+                } else {
+                    // Try to get the actual type name from the argument if possible
+                    if (i < node.getArguments().size()) {
+                        if (auto identifier = dynamic_cast<IdentifierExpression*>(node.getArguments()[i].get())) {
+                            auto symbol = symbolTable_->lookup(identifier->getName());
+                            if (symbol && !symbol->getTypeName().empty()) {
+                                paramType = symbol->getTypeName();
+                            }
                         }
                     }
                 }
@@ -2500,6 +2571,26 @@ bool CppGenerator::generateSystemFunctionCall(CallExpression& node, const std::s
             }
         }
         return true;
+    } else if (lowerName == "succ") {
+        // Handle succ(ordinal_value) - returns next value in sequence
+        if (!node.getArguments().empty()) {
+            emit("static_cast<decltype(");
+            node.getArguments()[0]->accept(*this);
+            emit(")>(static_cast<int>(");
+            node.getArguments()[0]->accept(*this);
+            emit(") + 1)");
+        }
+        return true;
+    } else if (lowerName == "pred") {
+        // Handle pred(ordinal_value) - returns previous value in sequence
+        if (!node.getArguments().empty()) {
+            emit("static_cast<decltype(");
+            node.getArguments()[0]->accept(*this);
+            emit(")>(static_cast<int>(");
+            node.getArguments()[0]->accept(*this);
+            emit(") - 1)");
+        }
+        return true;
     }
     return false;
 }
@@ -2730,6 +2821,8 @@ bool CppGenerator::isBuiltinFunction(const std::string& name) {
            lowerName == "halt" || lowerName == "exit" || lowerName == "random" || lowerName == "randomize" ||
            // Pointer arithmetic functions
            lowerName == "inc" || lowerName == "dec" ||
+           // Ordinal functions
+           lowerName == "succ" || lowerName == "pred" ||
            // Dynamic memory allocation functions
            lowerName == "getmem" || lowerName == "freemem" || lowerName == "mark" || lowerName == "release" ||
            // CRT unit functions

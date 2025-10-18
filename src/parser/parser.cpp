@@ -149,12 +149,29 @@ std::unique_ptr<Unit> Parser::parseUnit() {
             usesClause = parseUsesClause();
         }
         
-        // Parse interface declarations
+        // Parse interface declarations using same logic as main program
         std::vector<std::unique_ptr<Declaration>> interfaceDeclarations;
         while (!check(TokenType::IMPLEMENTATION) && !isAtEnd()) {
-            auto decl = parseDeclaration(true); // Pass true for interface context
-            if (decl) {
-                interfaceDeclarations.push_back(std::move(decl));
+            if (match(TokenType::CONST)) {
+                // Handle multiple constant declarations after 'const'
+                do {
+                    Token constNameToken = consume(TokenType::IDENTIFIER, "Expected constant name");
+                    consume(TokenType::EQUAL, "Expected '=' after constant name");
+                    auto value = parseExpression();
+                    consume(TokenType::SEMICOLON, "Expected ';' after constant declaration");
+                    
+                    auto constDecl = std::make_unique<ConstantDeclaration>(constNameToken.getValue(), std::move(value));
+                    interfaceDeclarations.push_back(std::move(constDecl));
+                    
+                } while (check(TokenType::IDENTIFIER) && !isAtEnd());
+            } else {
+                auto decl = parseDeclaration(true); // Pass true for interface context
+                if (decl) {
+                    interfaceDeclarations.push_back(std::move(decl));
+                } else {
+                    // Skip unexpected tokens and continue
+                    advance();
+                }
             }
         }
         

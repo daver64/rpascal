@@ -391,7 +391,7 @@ void SemanticAnalyzer::visit(FieldAccessExpression& node) {
         // Case 1: Object is an identifier (e.g., p.x)
         if (auto identifierExpr = dynamic_cast<IdentifierExpression*>(node.getObject())) {
             auto symbol = symbolTable_->lookup(identifierExpr->getName());
-            if (symbol && symbol->getSymbolType() == SymbolType::VARIABLE) {
+            if (symbol && (symbol->getSymbolType() == SymbolType::VARIABLE || symbol->getSymbolType() == SymbolType::PARAMETER)) {
                 recordTypeName = symbol->getTypeName();
             }
         }
@@ -409,7 +409,7 @@ void SemanticAnalyzer::visit(FieldAccessExpression& node) {
             // First get the object's object (for c.center.x, this would be 'c')
             if (auto outerIdentifier = dynamic_cast<IdentifierExpression*>(fieldAccessExpr->getObject())) {
                 auto outerSymbol = symbolTable_->lookup(outerIdentifier->getName());
-                if (outerSymbol && outerSymbol->getSymbolType() == SymbolType::VARIABLE) {
+                if (outerSymbol && (outerSymbol->getSymbolType() == SymbolType::VARIABLE || outerSymbol->getSymbolType() == SymbolType::PARAMETER)) {
                     std::string outerRecordTypeName = outerSymbol->getTypeName();
                     auto outerRecordTypeSymbol = symbolTable_->lookup(outerRecordTypeName);
                     
@@ -528,10 +528,38 @@ void SemanticAnalyzer::visit(ArrayIndexExpression& node) {
             currentExpressionType_ = elementDataType;
             currentExpressionTypeName_ = (elementDataType == DataType::CUSTOM) ? elementTypeName : "";
         } else {
-            // For open arrays and other custom types without proper type name, 
-            // we need to handle this case. For now, assume integer elements for open arrays
-            // This is a temporary fix - the real issue is that the type name isn't being stored properly
-            currentExpressionType_ = DataType::INTEGER;  // Assume integer for open arrays
+            // For custom array types, we need to resolve the array type name to get element type
+            if (!arrayTypeName.empty()) {
+                // Look up the array type definition
+                auto arrayTypeSymbol = symbolTable_->lookup(arrayTypeName);
+                if (arrayTypeSymbol && arrayTypeSymbol->getSymbolType() == SymbolType::TYPE_DEF) {
+                    std::string arrayDef = arrayTypeSymbol->getTypeDefinition();
+                    // Parse array definition like "array[0..9] of char" or "array of char"
+                    if (arrayDef.find("array") == 0 && arrayDef.find(" of ") != std::string::npos) {
+                        size_t ofPos = arrayDef.find(" of ");
+                        std::string elementTypeName = arrayDef.substr(ofPos + 4); // Skip " of "
+                        
+                        // Trim whitespace
+                        size_t start = elementTypeName.find_first_not_of(" \t");
+                        if (start != std::string::npos) {
+                            elementTypeName = elementTypeName.substr(start);
+                            size_t end = elementTypeName.find_last_not_of(" \t");
+                            if (end != std::string::npos) {
+                                elementTypeName = elementTypeName.substr(0, end + 1);
+                            }
+                        }
+                        
+                        // Set the element type as the result
+                        DataType elementDataType = symbolTable_->resolveDataType(elementTypeName);
+                        currentExpressionType_ = elementDataType;
+                        currentExpressionTypeName_ = (elementDataType == DataType::CUSTOM) ? elementTypeName : "";
+                        return;
+                    }
+                }
+            }
+            
+            // Fallback: assume integer elements for unknown array types
+            currentExpressionType_ = DataType::INTEGER;
             currentExpressionTypeName_ = "";
         }
     } else {
@@ -668,7 +696,7 @@ void SemanticAnalyzer::visit(AssignmentStatement& node) {
     // First visit the target to trigger with field resolution if needed
     node.getTarget()->accept(*this);
     
-    checkAssignment(node.getTarget(), node.getValue());
+    checkAssignment(node.getTarget(), node.getValue(), node.getLocation());
 }
 
 void SemanticAnalyzer::visit(IfStatement& node) {
@@ -1384,6 +1412,55 @@ bool SemanticAnalyzer::areTypesCompatible(DataType left, DataType right, const s
         return true;
     }
     
+    // Handle subrange type compatibility
+    if ((left == DataType::INTEGER && right == DataType::CUSTOM) && !rightTypeName.empty()) {
+        // Check if right is a numeric subrange type (e.g., TDigit = 0..9)
+        auto rightType = symbolTable_->lookup(rightTypeName);
+        if (rightType && rightType->getSymbolType() == SymbolType::TYPE_DEF) {
+            std::string rightDef = rightType->getTypeDefinition();
+            // Numeric subrange: contains ".." and no quotes
+            if (rightDef.find("..") != std::string::npos && rightDef.find("'") == std::string::npos) {
+                return true;
+            }
+        }
+    }
+    
+    if ((left == DataType::CUSTOM && right == DataType::INTEGER) && !leftTypeName.empty()) {
+        // Check if left is a numeric subrange type
+        auto leftType = symbolTable_->lookup(leftTypeName);
+        if (leftType && leftType->getSymbolType() == SymbolType::TYPE_DEF) {
+            std::string leftDef = leftType->getTypeDefinition();
+            // Numeric subrange: contains ".." and no quotes
+            if (leftDef.find("..") != std::string::npos && leftDef.find("'") == std::string::npos) {
+                return true;
+            }
+        }
+    }
+    
+    if ((left == DataType::CHAR && right == DataType::CUSTOM) && !rightTypeName.empty()) {
+        // Check if right is a character subrange type (e.g., TLetter = 'A'..'Z')
+        auto rightType = symbolTable_->lookup(rightTypeName);
+        if (rightType && rightType->getSymbolType() == SymbolType::TYPE_DEF) {
+            std::string rightDef = rightType->getTypeDefinition();
+            // Character subrange: contains ".." and quotes
+            if (rightDef.find("..") != std::string::npos && rightDef.find("'") != std::string::npos) {
+                return true;
+            }
+        }
+    }
+    
+    if ((left == DataType::CUSTOM && right == DataType::CHAR) && !leftTypeName.empty()) {
+        // Check if left is a character subrange type
+        auto leftType = symbolTable_->lookup(leftTypeName);
+        if (leftType && leftType->getSymbolType() == SymbolType::TYPE_DEF) {
+            std::string leftDef = leftType->getTypeDefinition();
+            // Character subrange: contains ".." and quotes
+            if (leftDef.find("..") != std::string::npos && leftDef.find("'") != std::string::npos) {
+                return true;
+            }
+        }
+    }
+    
     // Char is compatible with string (for assignments)
     if (left == DataType::STRING && right == DataType::CHAR) {
         return true;
@@ -1542,6 +1619,9 @@ bool SemanticAnalyzer::isValidBinaryOperation(DataType leftType, DataType rightT
                    (leftType == DataType::CHAR && rightType == DataType::CUSTOM) ||
                    (leftType == DataType::CUSTOM && rightType == DataType::STRING) ||
                    (leftType == DataType::STRING && rightType == DataType::CUSTOM) ||
+                   // Subrange type arithmetic: integer + custom, custom + integer
+                   (leftType == DataType::INTEGER && rightType == DataType::CUSTOM) ||
+                   (leftType == DataType::CUSTOM && rightType == DataType::INTEGER) ||
                    // Pointer arithmetic: pointer + integer
                    (leftType == DataType::POINTER && rightType == DataType::INTEGER) ||
                    (leftType == DataType::INTEGER && rightType == DataType::POINTER);
@@ -1591,10 +1671,11 @@ bool SemanticAnalyzer::isValidBinaryOperation(DataType leftType, DataType rightT
             return leftType == DataType::BOOLEAN && rightType == DataType::BOOLEAN;
             
         case TokenType::RANGE:
-            // Range operator: integer..integer or char..char (for case statements, sets, etc.)
+            // Range operator: integer..integer, char..char, enum..enum (for case statements, sets, etc.)
             return ((leftType == DataType::INTEGER || leftType == DataType::BYTE) &&
                     (rightType == DataType::INTEGER || rightType == DataType::BYTE)) ||
-                   (leftType == DataType::CHAR && rightType == DataType::CHAR);
+                   (leftType == DataType::CHAR && rightType == DataType::CHAR) ||
+                   (leftType == DataType::CUSTOM && rightType == DataType::CUSTOM);
             
         default:
             return false;
@@ -1710,7 +1791,7 @@ void SemanticAnalyzer::checkFunctionCall(CallExpression& node) {
     currentExpressionType_ = symbol->getReturnType();
 }
 
-void SemanticAnalyzer::checkAssignment(Expression* target, Expression* value) {
+void SemanticAnalyzer::checkAssignment(Expression* target, Expression* value, const SourceLocation& location) {
     // Check if target is assignable
     auto targetId = dynamic_cast<IdentifierExpression*>(target);
     auto targetField = dynamic_cast<FieldAccessExpression*>(target);
@@ -1732,24 +1813,39 @@ void SemanticAnalyzer::checkAssignment(Expression* target, Expression* value) {
                 return;
             }
             
-            addError("Undefined variable: " + targetId->getName());
+            addError("Undefined variable: " + targetId->getName(), location);
             return;
         }
         
         if (targetSymbol->getSymbolType() != SymbolType::VARIABLE &&
             targetSymbol->getSymbolType() != SymbolType::PARAMETER &&
             targetSymbol->getSymbolType() != SymbolType::FUNCTION) {
-            addError("Cannot assign to " + targetId->getName());
+            addError("Cannot assign to " + targetId->getName(), location);
             return;
         }
-    } else if (targetField || targetArray || targetDeref) {
-        // Field access, array indexing, or pointer dereference - these are valid assignment targets
+    } else if (targetArray) {
+        // Array indexing assignment - need to check element type compatibility
+        targetArray->accept(*this); // This will set currentExpressionType_ to the element type
+        DataType targetElementType = currentExpressionType_;
+        std::string targetElementTypeName = currentExpressionTypeName_;
+        
+        DataType valueType = getExpressionType(value);
+        
+        // Check type compatibility between array element type and value type
+        if (!areTypesCompatible(targetElementType, valueType, targetElementTypeName, currentExpressionTypeName_)) {
+            addError("Type mismatch in assignment: cannot assign " +
+                    SymbolTable::dataTypeToString(valueType) + " to " +
+                    SymbolTable::dataTypeToString(targetElementType), location);
+        }
+        return;
+    } else if (targetField || targetDeref) {
+        // Field access or pointer dereference - these are valid assignment targets
         // For now, skip detailed type checking and allow the assignment
-        // TODO: Add more detailed validation for field/array/pointer types
+        // TODO: Add more detailed validation for field/pointer types
         value->accept(*this);
         return; // Skip type compatibility check for now
     } else {
-        addError("Invalid assignment target");
+        addError("Invalid assignment target", location);
         return;
     }
     
@@ -1810,7 +1906,7 @@ void SemanticAnalyzer::checkAssignment(Expression* target, Expression* value) {
     if (!areTypesCompatible(targetType, valueType)) {
         addError("Type mismatch in assignment: cannot assign " +
                 SymbolTable::dataTypeToString(valueType) + " to " +
-                SymbolTable::dataTypeToString(targetType));
+                SymbolTable::dataTypeToString(targetType), location);
     }
 }
 
@@ -2070,6 +2166,8 @@ bool SemanticAnalyzer::isBuiltinFunction(const std::string& functionName) {
            // System unit conversion functions  
            lowerName == "val" || lowerName == "str" || lowerName == "inttostr" ||
            lowerName == "floattostr" || lowerName == "strtoint" || lowerName == "strtofloat" ||
+           // Ordinal functions
+           lowerName == "succ" || lowerName == "pred" ||
            // System unit string functions
            lowerName == "upcase" || lowerName == "trim" || lowerName == "trimleft" ||
            lowerName == "trimright" || lowerName == "stringofchar" || lowerName == "lowercase" ||
@@ -2190,6 +2288,19 @@ void SemanticAnalyzer::handleBuiltinFunction(const std::string& functionName, Ca
     } else if (lowerName == "blockread" || lowerName == "blockwrite" || lowerName == "seek") {
         // File operations are procedures (void)
         currentExpressionType_ = DataType::VOID;
+    } else if (lowerName == "succ" || lowerName == "pred") {
+        // Successor and predecessor functions return the same type as their argument
+        if (!node.getArguments().empty()) {
+            // Get the type of the first argument
+            DataType argType = getExpressionType(node.getArguments()[0].get());
+            currentExpressionType_ = argType;
+            // For custom types (enums, subranges), preserve the type name
+            if (argType == DataType::CUSTOM) {
+                currentExpressionTypeName_ = currentExpressionTypeName_; // Keep the type name from argument analysis
+            }
+        } else {
+            currentExpressionType_ = DataType::UNKNOWN;
+        }
     } else {
         currentExpressionType_ = DataType::UNKNOWN;
     }

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <sstream>
 #include <cctype>
+#include <functional>
 
 namespace rpascal {
 
@@ -23,7 +24,26 @@ std::unique_ptr<Unit> UnitLoader::loadUnit(const std::string& unitName) {
         // In a real implementation, we'd return cached unit
     }
     
-    // Find unit file
+    // Check if this is a built-in unit (DOS, CRT, System, etc.)
+    std::string lowerUnitName = unitName;
+    std::transform(lowerUnitName.begin(), lowerUnitName.end(), lowerUnitName.begin(), 
+                   [](char c) { return static_cast<char>(std::tolower(c)); });
+    
+    if (lowerUnitName == "dos" || lowerUnitName == "crt" || lowerUnitName == "system") {
+        // Create a synthetic unit for built-in units
+        // These units don't need actual parsing - their functions are handled by the compiler
+        auto unit = std::make_unique<Unit>(unitName,
+                                         std::make_unique<UsesClause>(std::vector<std::string>()),
+                                         std::vector<std::unique_ptr<Declaration>>(),
+                                         std::vector<std::unique_ptr<Declaration>>(),
+                                         nullptr);
+        
+        // Store in cache
+        loadedUnits_[unitName] = std::move(unit);
+        return nullptr; // Return nullptr since we moved to cache
+    }
+    
+    // Find unit file for user-defined units
     std::string unitFile = findUnitFile(unitName);
     if (unitFile.empty()) {
         std::cerr << "Unit file not found: " << unitName << "\n";

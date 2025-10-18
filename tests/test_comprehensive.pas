@@ -99,41 +99,41 @@ begin
   writeln('=== FEATURE COVERAGE SUMMARY ===');
   writeln();
   writeln('Core Language Features:');
-  writeln('  ✓ Basic data types (integer, real, boolean, char, byte, string)');
-  writeln('  ✓ Control flow (if, while, for, repeat, case, goto/labels)');
-  writeln('  ✓ Procedures and functions (parameters, overloading, recursion)');
-  writeln('  ✓ Records and variant records');
-  writeln('  ✓ Arrays (single and multi-dimensional)');
-  writeln('  ✓ Enumerations and subrange types');
-  writeln('  ✓ Pointers and dynamic memory');
-  writeln('  ✓ Set operations and set types');
+  writeln('   Basic data types (integer, real, boolean, char, byte, string)');
+  writeln('   Control flow (if, while, for, repeat, case, goto/labels)');
+  writeln('   Procedures and functions (parameters, overloading, recursion)');
+  writeln('   Records and variant records');
+  writeln('   Arrays (single and multi-dimensional)');
+  writeln('   Enumerations and subrange types');
+  writeln('   Pointers and dynamic memory');
+  writeln('   Set operations and set types');
   writeln();
   
   writeln('Advanced Features:');
-  writeln('  ✓ File operations (text, typed, binary)');
-  writeln('  ✓ Built-in functions (System, CRT, DOS units)');
-  writeln('  ✓ String operations (including bounded strings)');
-  writeln('  ✓ Labels and goto statements');
-  writeln('  ✓ With statements');
-  writeln('  ✓ Forward declarations');
+  writeln('   File operations (text, typed, binary)');
+  writeln('   Built-in functions (System, CRT, DOS units)');
+  writeln('   String operations (including bounded strings)');
+  writeln('   Labels and goto statements');
+  writeln('   With statements');
+  writeln('   Forward declarations');
   writeln();
   
   writeln('Turbo Pascal 7 Compatibility:');
-  writeln('  ✓ 95%+ language feature compatibility');
-  writeln('  ✓ All major programming constructs');
-  writeln('  ✓ Comprehensive built-in function library');
-  writeln('  ✓ Memory management and pointers');
-  writeln('  ✓ File I/O operations');
+  writeln('   95%+ language feature compatibility');
+  writeln('   All major programming constructs');
+  writeln('   Comprehensive built-in function library');
+  writeln('   Memory management and pointers');
+  writeln('   File I/O operations');
   writeln();
   
   if passed_count = total_tests then
   begin
-    writeln('🎉 ALL TESTS PASSED! 🎉');
+    writeln(' ALL TESTS PASSED! 🎉');
     writeln('RPascal demonstrates excellent Turbo Pascal 7 compatibility.');
   end
   else
   begin
-    writeln('⚠️  Some tests failed. Review the results above.');
+    writeln('  Some tests failed. Review the results above.');
   end;
   
   writeln();

@@ -16,9 +16,9 @@ type
   TPriority = (Low, Normal, High, Critical);
   
   { Subrange types - simplified (ranges not fully supported) }
-  { TDigit = 0..9; }
-  { TLetter = 'A'..'Z'; }
-  { TPercent = 0..100; }
+  TDigit = 0..9;
+  TLetter = 'A'..'Z';
+  TPercent = 0..100;
   { TWorkDay = Monday..Friday; }
 
 var
@@ -28,9 +28,9 @@ var
   priority: TPriority;
   
   { Subrange variables - commented out since subranges not fully supported }
-  { digit: TDigit; }
-  { letter: TLetter; }
-  { percent: TPercent; }
+  digit: TDigit;
+  letter: TLetter;
+  percent: TPercent;
   { workday: TWorkDay; }
   
   { Loop and helper variables }
