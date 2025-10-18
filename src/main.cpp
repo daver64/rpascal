@@ -4,6 +4,7 @@
 #include "../include/symbol_table.h"
 #include "../include/type_checker.h"
 #include "../include/cpp_generator.h"
+#include <algorithm>
 #include <iostream>
 #include <fstream>
 #include <sstream>

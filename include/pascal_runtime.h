@@ -85,11 +85,11 @@ public:
     }
     
     // File positioning
-    long filepos() const {
+    long filepos() {
         return stream_.tellg() / sizeof(T);
     }
     
-    long filesize() const {
+    long filesize() {
         auto pos = stream_.tellg();
         stream_.seekg(0, std::ios::end);
         auto size = stream_.tellg() / sizeof(T);
@@ -137,12 +137,12 @@ void pascal_blockread(PascalTypedFile<T>& file, T* buffer, size_t count, size_t&
 }
 
 template<typename T>
-long pascal_filepos(const PascalTypedFile<T>& file) {
+long pascal_filepos(PascalTypedFile<T>& file) {
     return file.filepos();
 }
 
 template<typename T>
-long pascal_filesize(const PascalTypedFile<T>& file) {
+long pascal_filesize(PascalTypedFile<T>& file) {
     return file.filesize();
 }
 

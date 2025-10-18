@@ -1434,6 +1434,7 @@ std::string CppGenerator::generateHeaders() {
            "#include <iostream>\n"
            "#include <fstream>\n"
            "#include <string>\n"
+           "#include <vector>\n"
            "#include <array>\n"
            "#include <set>\n"
            "#include <algorithm>\n"

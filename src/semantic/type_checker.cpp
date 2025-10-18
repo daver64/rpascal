@@ -1,4 +1,5 @@
 #include "../include/type_checker.h"
+#include <algorithm>
 #include <iostream>
 
 namespace rpascal {
@@ -427,6 +428,7 @@ void SemanticAnalyzer::visit(FieldAccessExpression& node) {
         }
         // Case 3: Object is a dereference expression (e.g., ptr^.data)
         else if (auto dereferenceExpr = dynamic_cast<DereferenceExpression*>(node.getObject())) {
+            (void)dereferenceExpr; // Suppress unused variable warning
             // The dereference expression should have already been processed and 
             // currentExpressionType_ should be set to the pointee type
             // For record pointers, currentExpressionTypeName_ should contain the record type name
