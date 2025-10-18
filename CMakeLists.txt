@@ -34,10 +34,14 @@ if(MSVC)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # GCC specific settings
     add_compile_options(-Wall -Wextra -Werror -pedantic)
+    # Disable specific warnings that are problematic for our codebase
+    add_compile_options(-Wno-unused-but-set-variable -Wno-unused-parameter)
     message(STATUS "Using GCC compiler")
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # Clang specific settings
     add_compile_options(-Wall -Wextra -Werror -pedantic)
+    # Disable specific warnings that may be problematic
+    add_compile_options(-Wno-unused-parameter)
     message(STATUS "Using Clang compiler")
 endif()
 

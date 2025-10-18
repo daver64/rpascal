@@ -38,16 +38,36 @@ void showHelp(const std::string& programName) {
     std::cout << "RPascal - Turbo Pascal 7 Compatible Compiler\n";
     std::cout << "Usage: " << programName << " [options] <input_file>\n\n";
     std::cout << "Options:\n";
-    std::cout << "  -o <file>     Specify output executable (default: <input>.exe)\n";
+    std::cout << "  -o <file>     Specify output executable (default: <input>"
+#ifdef _WIN32
+              << ".exe"
+#endif  
+              << ")\n";
     std::cout << "  --keep-cpp    Keep intermediate C++ file after compilation\n";
     std::cout << "  -v            Verbose output\n";
     std::cout << "  --tokens      Show tokenization output\n";
     std::cout << "  --ast         Show Abstract Syntax Tree\n";
     std::cout << "  -h, --help    Show this help message\n\n";
     std::cout << "Examples:\n";
-    std::cout << "  " << programName << " hello.pas                    # Generates hello.exe\n";
-    std::cout << "  " << programName << " -o myprogram.exe hello.pas   # Generates myprogram.exe\n";
-    std::cout << "  " << programName << " --keep-cpp hello.pas         # Generates hello.exe and keeps hello.cpp\n";
+    std::cout << "  " << programName << " hello.pas                    # Generates hello"
+#ifdef _WIN32
+              << ".exe"
+#endif
+              << "\n";
+    std::cout << "  " << programName << " -o myprogram"
+#ifdef _WIN32
+              << ".exe"
+#endif
+              << " hello.pas   # Generates myprogram"
+#ifdef _WIN32
+              << ".exe"
+#endif
+              << "\n";
+    std::cout << "  " << programName << " --keep-cpp hello.pas         # Generates hello"
+#ifdef _WIN32
+              << ".exe"
+#endif
+              << " and keeps hello.cpp\n";
     std::cout << "  " << programName << " --tokens --ast -v hello.pas  # Show debug output\n";
 }
 
@@ -95,10 +115,13 @@ CompilerOptions parseArguments(int argc, char* argv[]) {
     if (options.outputFile.empty() && !options.inputFile.empty()) {
         size_t lastDot = options.inputFile.find_last_of('.');
         if (lastDot != std::string::npos) {
-            options.outputFile = options.inputFile.substr(0, lastDot) + ".exe";
+            options.outputFile = options.inputFile.substr(0, lastDot);
         } else {
-            options.outputFile = options.inputFile + ".exe";
+            options.outputFile = options.inputFile;
         }
+#ifdef _WIN32
+        options.outputFile += ".exe";
+#endif
     }
     
     // Set C++ intermediate file name
@@ -460,9 +483,11 @@ bool compileToExecutable(const std::string& cppFile, const std::string& exeFile,
 
     CommandBuilder builder;
 
-    // Try MSVC first (cl.exe), then fallback to MinGW
     bool useMSVC = false;
     std::string compilerPath;
+
+#ifdef _WIN32
+    // Windows: Try MSVC first (cl.exe), then fallback to MinGW
     
     // Check if cl.exe is available
     int result = std::system("cl >nul 2>&1");
@@ -473,24 +498,47 @@ bool compileToExecutable(const std::string& cppFile, const std::string& exeFile,
             std::cout << "Using MSVC compiler (cl.exe)" << std::endl;
         }
     } else {
-        // Fallback to MinGW
+        // Fallback to MinGW on Windows
         std::filesystem::path currentDir = std::filesystem::current_path();
         std::filesystem::path mingwPath = currentDir / "mingw64" / "bin" / "g++.exe";
         
         if (std::filesystem::exists(mingwPath)) {
             compilerPath = mingwPath.string();
         } else {
-            // Try system MinGW
-            compilerPath = "C:\\mingw64\\bin\\g++.exe";
-            if (!std::filesystem::exists(compilerPath)) {
-                std::cerr << "Error: Neither MSVC nor MinGW g++ found. Please install Visual Studio or MinGW64." << std::endl;
+            // Try system g++ (could be MinGW or other)
+            int gppResult = std::system("g++ --version >nul 2>&1");
+            if (gppResult == 0) {
+                compilerPath = "g++";
+            } else {
+                std::cerr << "Error: Neither MSVC nor g++ found. Please install Visual Studio, MinGW64, or GCC." << std::endl;
                 return false;
             }
         }
         if (verbose) {
-            std::cout << "Using MinGW compiler: " << compilerPath << std::endl;
+            std::cout << "Using g++ compiler: " << compilerPath << std::endl;
         }
     }
+#else
+    // Linux/Unix: Try g++ first, then clang++
+    int gppResult = std::system("g++ --version >/dev/null 2>&1");
+    if (gppResult == 0) {
+        compilerPath = "g++";
+        if (verbose) {
+            std::cout << "Using g++ compiler" << std::endl;
+        }
+    } else {
+        int clangResult = std::system("clang++ --version >/dev/null 2>&1");
+        if (clangResult == 0) {
+            compilerPath = "clang++";
+            if (verbose) {
+                std::cout << "Using clang++ compiler" << std::endl;
+            }
+        } else {
+            std::cerr << "Error: Neither g++ nor clang++ found. Please install GCC or Clang." << std::endl;
+            return false;
+        }
+    }
+#endif
 
     // Configure compiler based on type
     if (useMSVC) {
@@ -500,11 +548,19 @@ bool compileToExecutable(const std::string& cppFile, const std::string& exeFile,
                .input(cppFile)
                .output(exeFile);
     } else {
-        // MinGW configuration with static linking
+#ifdef _WIN32
+        // Windows g++/MinGW configuration with static linking
         builder.compiler(compilerPath)
                .compileFlags({"-std=c++17", "-O2", "-static-libgcc", "-static-libstdc++", "-static"})
                .input(cppFile)
                .output(exeFile);
+#else
+        // Linux/Unix g++/clang++ configuration
+        builder.compiler(compilerPath)
+               .compileFlags({"-std=c++17", "-O2"})
+               .input(cppFile)
+               .output(exeFile);
+#endif
     }
 
     if (verbose) {
