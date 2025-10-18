@@ -240,18 +240,54 @@ void SemanticAnalyzer::visit(BinaryExpression& node) {
     
     currentExpressionType_ = getResultType(leftType, rightType, operator_);
     
-    // For set operations, preserve the type name from the operands
-    if (currentExpressionType_ == DataType::CUSTOM && 
-        (operator_ == TokenType::PLUS || operator_ == TokenType::MINUS || operator_ == TokenType::MULTIPLY)) {
-        // For set operations, both operands should have the same set type
-        if (!leftTypeName.empty() && !rightTypeName.empty() && leftTypeName == rightTypeName) {
-            currentExpressionTypeName_ = leftTypeName;
-        } else if (!leftTypeName.empty()) {
-            currentExpressionTypeName_ = leftTypeName;
-        } else if (!rightTypeName.empty()) {
-            currentExpressionTypeName_ = rightTypeName;
-        } else {
-            currentExpressionTypeName_ = "";
+    // Handle type name preservation for custom types
+    if (currentExpressionType_ == DataType::CUSTOM) {
+        if (operator_ == TokenType::PLUS || operator_ == TokenType::MINUS || operator_ == TokenType::MULTIPLY) {
+            // For set operations, both operands should have the same set type
+            if (!leftTypeName.empty() && !rightTypeName.empty() && leftTypeName == rightTypeName) {
+                currentExpressionTypeName_ = leftTypeName;
+            } else if (!leftTypeName.empty()) {
+                currentExpressionTypeName_ = leftTypeName;
+            } else if (!rightTypeName.empty()) {
+                currentExpressionTypeName_ = rightTypeName;
+            } else {
+                currentExpressionTypeName_ = "";
+            }
+        }
+        
+        // Special case for bounded string + char operations
+        if (operator_ == TokenType::PLUS) {
+            if (leftType == DataType::CUSTOM && rightType == DataType::CHAR && !leftTypeName.empty()) {
+                // Check if left is a bounded string
+                auto leftTypeSymbol = symbolTable_->lookup(leftTypeName);
+                if (leftTypeSymbol && leftTypeSymbol->getSymbolType() == SymbolType::TYPE_DEF) {
+                    std::string leftDef = leftTypeSymbol->getTypeDefinition();
+                    if (leftDef.find("string[") == 0) {
+                        currentExpressionType_ = DataType::CUSTOM;
+                        currentExpressionTypeName_ = leftTypeName;
+                    }
+                }
+            } else if ((leftType == DataType::CHAR || leftType == DataType::STRING) && rightType == DataType::CUSTOM && !rightTypeName.empty()) {
+                // Check if right is a bounded string
+                auto rightTypeSymbol = symbolTable_->lookup(rightTypeName);
+                if (rightTypeSymbol && rightTypeSymbol->getSymbolType() == SymbolType::TYPE_DEF) {
+                    std::string rightDef = rightTypeSymbol->getTypeDefinition();
+                    if (rightDef.find("string[") == 0) {
+                        currentExpressionType_ = DataType::CUSTOM;
+                        currentExpressionTypeName_ = rightTypeName;
+                    }
+                }
+            } else if (leftType == DataType::CUSTOM && (rightType == DataType::STRING || rightType == DataType::CHAR) && !leftTypeName.empty()) {
+                // Check if left is a bounded string
+                auto leftTypeSymbol = symbolTable_->lookup(leftTypeName);
+                if (leftTypeSymbol && leftTypeSymbol->getSymbolType() == SymbolType::TYPE_DEF) {
+                    std::string leftDef = leftTypeSymbol->getTypeDefinition();
+                    if (leftDef.find("string[") == 0) {
+                        currentExpressionType_ = DataType::CUSTOM;
+                        currentExpressionTypeName_ = leftTypeName;
+                    }
+                }
+            }
         }
     } else {
         currentExpressionTypeName_ = ""; // Result types are usually built-in types
@@ -672,6 +708,7 @@ void SemanticAnalyzer::visit(ForStatement& node) {
     
     // Check that loop variable is an ordinal type (integer, char, enum, etc.)
     DataType varType = variable->getDataType();
+    std::string varTypeName = variable->getTypeName();
     if (varType != DataType::INTEGER && varType != DataType::CHAR && 
         varType != DataType::CUSTOM && varType != DataType::UNKNOWN) {
         addError("For loop variable must be an ordinal type, got " + SymbolTable::dataTypeToString(varType));
@@ -680,16 +717,48 @@ void SemanticAnalyzer::visit(ForStatement& node) {
     // Check start expression
     node.getStart()->accept(*this);
     DataType startType = currentExpressionType_;
+    std::string startTypeName = currentExpressionTypeName_;
     
     // Check end expression  
     node.getEnd()->accept(*this);
     DataType endType = currentExpressionType_;
+    std::string endTypeName = currentExpressionTypeName_;
+    
+    // Helper lambda to check type compatibility for for loops
+    auto isCompatibleForLoopType = [this](DataType varType, const std::string& varTypeName, DataType exprType, const std::string& exprTypeName) -> bool {
+        if (varType == exprType) {
+            if (varType == DataType::CUSTOM) {
+                return varTypeName == exprTypeName;
+            }
+            return true;
+        }
+        
+        // Check if variable type is a subrange type compatible with expression type
+        if (varType == DataType::CUSTOM && !varTypeName.empty()) {
+            auto typeSymbol = symbolTable_->lookup(varTypeName);
+            if (typeSymbol && typeSymbol->getSymbolType() == SymbolType::TYPE_DEF) {
+                std::string typeDef = typeSymbol->getTypeDefinition();
+                // Check if it's a numeric subrange (e.g., "0..9")
+                if (typeDef.find("..") != std::string::npos && typeDef.find("'") == std::string::npos) {
+                    return exprType == DataType::INTEGER;
+                }
+                // Check if it's a character subrange (e.g., "'A'..'Z'")
+                if (typeDef.find("..") != std::string::npos && typeDef.find("'") != std::string::npos) {
+                    return exprType == DataType::CHAR;
+                }
+            }
+        }
+        
+        return false;
+    };
     
     // Check that start and end expressions are compatible with loop variable
-    if (varType != DataType::UNKNOWN && startType != DataType::UNKNOWN && startType != varType) {
+    if (varType != DataType::UNKNOWN && startType != DataType::UNKNOWN && 
+        !isCompatibleForLoopType(varType, varTypeName, startType, startTypeName)) {
         addError("For loop start expression type doesn't match variable type");
     }
-    if (varType != DataType::UNKNOWN && endType != DataType::UNKNOWN && endType != varType) {
+    if (varType != DataType::UNKNOWN && endType != DataType::UNKNOWN && 
+        !isCompatibleForLoopType(varType, varTypeName, endType, endTypeName)) {
         addError("For loop end expression type doesn't match variable type");
     }
     
@@ -1319,6 +1388,31 @@ bool SemanticAnalyzer::areTypesCompatible(DataType left, DataType right, const s
     if (left == DataType::STRING && right == DataType::CHAR) {
         return true;
     }
+    
+    // Handle bounded string compatibility with char and string
+    if ((left == DataType::CUSTOM && (right == DataType::CHAR || right == DataType::STRING)) && !leftTypeName.empty()) {
+        // Check if left is a bounded string type
+        auto leftType = symbolTable_->lookup(leftTypeName);
+        if (leftType && leftType->getSymbolType() == SymbolType::TYPE_DEF) {
+            std::string leftDef = leftType->getTypeDefinition();
+            // Check if it's a bounded string like "string[10]"
+            if (leftDef.find("string[") == 0) {
+                return true;
+            }
+        }
+    }
+    
+    if (((left == DataType::CHAR || left == DataType::STRING) && right == DataType::CUSTOM) && !rightTypeName.empty()) {
+        // Check if right is a bounded string type
+        auto rightType = symbolTable_->lookup(rightTypeName);
+        if (rightType && rightType->getSymbolType() == SymbolType::TYPE_DEF) {
+            std::string rightDef = rightType->getTypeDefinition();
+            // Check if it's a bounded string like "string[10]"
+            if (rightDef.find("string[") == 0) {
+                return true;
+            }
+        }
+    }
 
     return false;
 }
@@ -1346,8 +1440,15 @@ DataType SemanticAnalyzer::getResultType(DataType left, DataType right, TokenTyp
         if (left == DataType::INTEGER && right == DataType::POINTER) {
             return DataType::POINTER;
         }
-        // Set union
+        // Set union and bounded string operations
         if (left == DataType::CUSTOM && right == DataType::CUSTOM) {
+            return DataType::CUSTOM;
+        }
+        // Bounded string operations
+        if ((left == DataType::CUSTOM && right == DataType::CHAR) ||
+            (left == DataType::CHAR && right == DataType::CUSTOM) ||
+            (left == DataType::CUSTOM && right == DataType::STRING) ||
+            (left == DataType::STRING && right == DataType::CUSTOM)) {
             return DataType::CUSTOM;
         }
         // String concatenation: string + string, string + char, char + string all return string
@@ -1435,7 +1536,12 @@ bool SemanticAnalyzer::isValidBinaryOperation(DataType leftType, DataType rightT
                    (leftType == DataType::STRING && rightType == DataType::STRING) ||
                    (leftType == DataType::STRING && rightType == DataType::CHAR) ||
                    (leftType == DataType::CHAR && rightType == DataType::STRING) ||
+                   // Set operations and bounded string operations
                    (leftType == DataType::CUSTOM && rightType == DataType::CUSTOM) ||
+                   (leftType == DataType::CUSTOM && rightType == DataType::CHAR) ||
+                   (leftType == DataType::CHAR && rightType == DataType::CUSTOM) ||
+                   (leftType == DataType::CUSTOM && rightType == DataType::STRING) ||
+                   (leftType == DataType::STRING && rightType == DataType::CUSTOM) ||
                    // Pointer arithmetic: pointer + integer
                    (leftType == DataType::POINTER && rightType == DataType::INTEGER) ||
                    (leftType == DataType::INTEGER && rightType == DataType::POINTER);

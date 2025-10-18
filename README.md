@@ -33,6 +33,21 @@ RPascal achieves **95%+ compatibility** with Turbo Pascal 7 based on comprehensi
 - ✅ **File types** (`text`, `file of T`, untyped files)
 - ✅ **String types** including bounded strings (`string[N]`)
 
+**String Operations (Complete Implementation):**
+- ✅ **String concatenation** (`s1 + s2`, `s + char`, `char + s`) with proper type handling
+- ✅ **Bounded string operations** (`string[N]`) with automatic truncation
+- ✅ **Bounded string concatenation** (`TShortString + char`, `TShortString + string`)
+- ✅ **String functions** (`length`, `pos`, `copy`, `insert`, `delete`, etc.)
+- ✅ **Character indexing** (`s[i]`) with proper bounds checking
+- ✅ **String assignments** and type conversions
+
+**Multi-dimensional Arrays (Complete Implementation):**
+- ✅ **2D arrays** (`array[1..3, 1..3] of integer`) with row-major layout
+- ✅ **3D arrays** (`array[0..2, 0..2, 0..2] of real`) with proper indexing
+- ✅ **Mixed bounds** (different start indices like `[1..3, 0..2]`)
+- ✅ **Efficient indexing** using flattened std::array with calculated offsets
+- ✅ **Type safety** with compile-time bounds verification
+
 **Set Operations (Complete Implementation):**
 - ✅ **Set declarations** (`TColorSet = set of TColor`)
 - ✅ **Set literals** with range expansion (`['a'..'z']`, `[Monday..Sunday]`, `[0..9]`)
@@ -144,21 +159,16 @@ RPascal achieves **95%+ compatibility** with Turbo Pascal 7 based on comprehensi
 
 ### ⚠️ **Partially Working Features (70-90% Compatible)**
 
-**String System:**
-- ⚠️ **String operations** - Most work, some edge cases with assignments
-- ⚠️ **Bounded strings** - Basic support, may have boundary issues
-
 **Type System Edge Cases:**
 - ⚠️ **Complex variant records** - Basic support, advanced cases may fail
-- ⚠️ **Multi-dimensional arrays** - Working but may have indexing edge cases
 
 ### ❌ **Missing Features (Not Implemented)**
 
 **Advanced Language Features:**
 - ❌ **Absolute variables** - Not implemented
 - ❌ **Interrupt procedures** - Not implemented (by design)
-- ❌ **Inline assembly** - Excluded for portability
-- ❌ **Object-oriented features** - Classes/objects not supported
+- ❌ **Inline assembly** - Not implemented (by design)
+- ❌ **Object-oriented features** - Not implemented (by design)
 
 **Advanced Type Features:**
 - ❌ **Procedural types** - Function/procedure variables
@@ -356,6 +366,8 @@ RPascal includes comprehensive test suites:
 - **Core language tests** - All basic Pascal constructs
 - **Pointer operation tests** - Memory management and dereferencing  
 - **Set operation tests** - Complete set arithmetic validation
+- **String operation tests** - All string functions, bounded strings, concatenation
+- **Multi-dimensional array tests** - 2D and 3D arrays with complex indexing
 - **Function/procedure tests** - Parameter passing and overloading
 - **Control flow tests** - All loop and conditional constructs
 - **Built-in function tests** - String, math, I/O, and system functions
@@ -370,9 +382,10 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## Contributing
 
 Contributions welcome! The remaining 5% compatibility gap consists mainly of:
-- Procedural type variables
+- Procedural type variables (function/procedure pointers)
 - Advanced variant record edge cases  
-- Some string operation edge cases
 - Absolute variable declarations
+- Interrupt procedures (by design)
+- Inline assembly (by design)
 
 See issues for specific improvement areas.

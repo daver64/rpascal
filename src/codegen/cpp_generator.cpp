@@ -161,7 +161,7 @@ void CppGenerator::visit(BinaryExpression& node) {
         // Check if we're dealing with sets by looking for set types
         bool mightBeSetOperation = false;
         
-        // Helper function to check if an expression might be a set
+        // Helper function to check if an expression is definitely a set
         auto isSetExpression = [this](Expression* expr) -> bool {
             // Check for set literals
             if (dynamic_cast<SetLiteralExpression*>(expr)) {
@@ -179,14 +179,7 @@ void CppGenerator::visit(BinaryExpression& node) {
                 }
             }
             
-            // Check for nested binary expressions that might be set operations
-            if (auto binExpr = dynamic_cast<BinaryExpression*>(expr)) {
-                TokenType binOp = binExpr->getOperator().getType();
-                if (binOp == TokenType::PLUS || binOp == TokenType::MULTIPLY || binOp == TokenType::MINUS) {
-                    // If it's a set operation, the result is also a set
-                    return true;
-                }
-            }
+            // Don't assume nested binary expressions are sets - let them be handled by the caller
             
             return false;
         };
@@ -3068,6 +3061,50 @@ void CppGenerator::generateBoundedStringDefinition(const std::string& typeName, 
             emitLine(typeName + "& operator=(const char* s) {");
             increaseIndent();
             emitLine("return *this = std::string(s);");
+            decreaseIndent();
+            emitLine("}");
+            emitLine("");
+            emitLine("// Concatenation operators");
+            emitLine("friend " + typeName + " operator+(const " + typeName + "& lhs, const " + typeName + "& rhs) {");
+            increaseIndent();
+            emitLine("return " + typeName + "(lhs.data_ + rhs.data_);");
+            decreaseIndent();
+            emitLine("}");
+            emitLine("");
+            emitLine("friend " + typeName + " operator+(const " + typeName + "& lhs, const std::string& rhs) {");
+            increaseIndent();
+            emitLine("return " + typeName + "(lhs.data_ + rhs);");
+            decreaseIndent();
+            emitLine("}");
+            emitLine("");
+            emitLine("friend " + typeName + " operator+(const std::string& lhs, const " + typeName + "& rhs) {");
+            increaseIndent();
+            emitLine("return " + typeName + "(lhs + rhs.data_);");
+            decreaseIndent();
+            emitLine("}");
+            emitLine("");
+            emitLine("friend " + typeName + " operator+(const " + typeName + "& lhs, const char* rhs) {");
+            increaseIndent();
+            emitLine("return " + typeName + "(lhs.data_ + std::string(rhs));");
+            decreaseIndent();
+            emitLine("}");
+            emitLine("");
+            emitLine("friend " + typeName + " operator+(const char* lhs, const " + typeName + "& rhs) {");
+            increaseIndent();
+            emitLine("return " + typeName + "(std::string(lhs) + rhs.data_);");
+            decreaseIndent();
+            emitLine("}");
+            emitLine("");
+            emitLine("// Character concatenation operators");
+            emitLine("friend " + typeName + " operator+(const " + typeName + "& lhs, char rhs) {");
+            increaseIndent();
+            emitLine("return " + typeName + "(lhs.data_ + rhs);");
+            decreaseIndent();
+            emitLine("}");
+            emitLine("");
+            emitLine("friend " + typeName + " operator+(char lhs, const " + typeName + "& rhs) {");
+            increaseIndent();
+            emitLine("return " + typeName + "(lhs + rhs.data_);");
             decreaseIndent();
             emitLine("}");
             decreaseIndent();
