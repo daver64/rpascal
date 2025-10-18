@@ -32,7 +32,6 @@ RPascal includes built-in implementations of standard Turbo Pascal units:
 - **Built-in Functions**: `succ()`, `pred()`, `ord()`, `chr()`, string functions
 - **Labels & GOTO**: Full support for structured and unstructured control flow
 - **Forward Declarations**: Procedure and function forward declarations
-- **Nested Procedures**: Local procedure and function definitions
 - **Parameter Types**: Value parameters, var parameters, const parameters
 
 ## Building
@@ -121,7 +120,7 @@ bin\rpascal tests\test_strings.pas
 - ✅ File I/O operations (text and binary files)
 - ✅ 60+ built-in functions across System, CRT, DOS, strings units
 - ✅ Memory management (new, dispose, dynamic allocation)
-- ✅ Forward declarations and nested procedures
+- ✅ Forward declarations and recursion
 
 ## Architecture
 
@@ -140,6 +139,7 @@ The generated C++ code is self-contained and includes all necessary Pascal runti
 As beta software, RPascal has some remaining limitations:
 
 - **Incomplete Language Coverage**: Some advanced Pascal features are not yet implemented
+- **Nested Procedures**: Local procedure/function definitions are not supported (use global procedures instead)
 - **Error Handling**: Error messages could be more descriptive and user-friendly  
 - **Performance**: Generated code is functional but not yet optimized for performance
 - **Platform Support**: Tested on Windows and Linux. The included test runner scripts (`run_tests.bat` and `run_tests.sh`) execute the full test suite; recent runs completed successfully on both platforms with no errors.

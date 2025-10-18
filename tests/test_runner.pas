@@ -39,7 +39,7 @@ begin
   writeln('  ✓ Enhanced string operations');
   writeln('  ✓ Most built-in functions (60+ functions)');
   writeln('  ✓ File I/O operations');
-  writeln('  ✓ Nested procedures and local scoping');
+  writeln('  ✓ Forward declarations and recursion');
   writeln('  ✓ Forward declarations and recursion');
   writeln();
   
