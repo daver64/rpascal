@@ -2056,8 +2056,9 @@ bool SemanticAnalyzer::isBuiltinFunction(const std::string& functionName) {
            lowerName == "length" || lowerName == "chr" || lowerName == "ord" || 
            lowerName == "pos" || lowerName == "copy" || lowerName == "concat" ||
            lowerName == "insert" || lowerName == "delete" || lowerName == "assign" ||
-           lowerName == "reset" || lowerName == "rewrite" || lowerName == "close" ||
-           lowerName == "eof" || lowerName == "new" || lowerName == "dispose" ||
+           lowerName == "reset" || lowerName == "rewrite" || lowerName == "append" ||
+           lowerName == "close" || lowerName == "eof" || lowerName == "ioresult" ||
+           lowerName == "new" || lowerName == "dispose" ||
            // File operations
            lowerName == "blockread" || lowerName == "blockwrite" || 
            lowerName == "filepos" || lowerName == "filesize" || lowerName == "seek" ||
@@ -2127,8 +2128,8 @@ void SemanticAnalyzer::handleBuiltinFunction(const std::string& functionName, Ca
     // Set return type based on function
     if (lowerName == "writeln" || lowerName == "write" || lowerName == "readln" || lowerName == "read" ||
         lowerName == "insert" || lowerName == "delete" || lowerName == "assign" ||
-        lowerName == "reset" || lowerName == "rewrite" || lowerName == "close" ||
-        lowerName == "new" || lowerName == "dispose" || lowerName == "halt" ||
+        lowerName == "reset" || lowerName == "rewrite" || lowerName == "append" ||
+        lowerName == "close" || lowerName == "new" || lowerName == "dispose" || lowerName == "halt" ||
         lowerName == "exit" || lowerName == "randomize" ||
         // CRT procedures (no return value)
         lowerName == "clrscr" || lowerName == "clreol" || lowerName == "gotoxy" ||
@@ -2183,8 +2184,8 @@ void SemanticAnalyzer::handleBuiltinFunction(const std::string& functionName, Ca
                // DOS functions returning boolean
                lowerName == "fileexists" || lowerName == "directoryexists") {
         currentExpressionType_ = DataType::BOOLEAN;
-    } else if (lowerName == "filepos" || lowerName == "filesize") {
-        // File position functions return integer
+    } else if (lowerName == "filepos" || lowerName == "filesize" || lowerName == "ioresult") {
+        // File position and I/O error functions return integer
         currentExpressionType_ = DataType::INTEGER;
     } else if (lowerName == "blockread" || lowerName == "blockwrite" || lowerName == "seek") {
         // File operations are procedures (void)

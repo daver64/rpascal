@@ -19,6 +19,7 @@ public:
     void assign(const std::string& filename);
     void reset();   // open for reading
     void rewrite(); // open for writing
+    void append();  // open for appending
     void close();
     bool eof() const;
     
@@ -120,6 +121,9 @@ std::string pascal_leftstr(const std::string& str, int count);
 std::string pascal_rightstr(const std::string& str, int count);
 std::string pascal_padleft(const std::string& str, int totalWidth, char paddingChar = ' ');
 std::string pascal_padright(const std::string& str, int totalWidth, char paddingChar = ' ');
+
+// I/O error checking
+int pascal_ioresult();
 
 // File operation functions
 template<typename T>

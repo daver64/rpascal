@@ -394,6 +394,10 @@ void SymbolTable::initializeBuiltinSymbols() {
     rewriteFile->addParameter("f", DataType::FILE_TYPE); // var parameter
     define("rewrite", rewriteFile);
     
+    auto appendFile = std::make_shared<Symbol>("append", SymbolType::PROCEDURE, DataType::VOID, 0);
+    appendFile->addParameter("f", DataType::FILE_TYPE); // var parameter
+    define("append", appendFile);
+    
     auto closeFile = std::make_shared<Symbol>("close", SymbolType::PROCEDURE, DataType::VOID, 0);
     closeFile->addParameter("f", DataType::FILE_TYPE); // var parameter
     define("close", closeFile);
@@ -402,6 +406,10 @@ void SymbolTable::initializeBuiltinSymbols() {
     eofFunc->addParameter("f", DataType::FILE_TYPE);
     eofFunc->setReturnType(DataType::BOOLEAN);
     define("eof", eofFunc);
+    
+    auto ioresultFunc = std::make_shared<Symbol>("ioresult", SymbolType::FUNCTION, DataType::INTEGER, 0);
+    ioresultFunc->setReturnType(DataType::INTEGER);
+    define("ioresult", ioresultFunc);
     
     // File position and block operation functions
     auto blockreadFunc = std::make_shared<Symbol>("blockread", SymbolType::PROCEDURE, DataType::VOID, 0);

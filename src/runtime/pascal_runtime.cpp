@@ -9,6 +9,9 @@
 
 namespace rpascal {
 
+// Global I/O error tracking
+static int g_last_io_error = 0;
+
 // PascalFile implementation
 void PascalFile::assign(const std::string& filename) {
     filename_ = filename;
@@ -18,11 +21,19 @@ void PascalFile::assign(const std::string& filename) {
 void PascalFile::reset() {
     close(); // Close if already open
     stream_.open(filename_, std::ios::in);
+    g_last_io_error = stream_.good() ? 0 : 2; // 2 = file not found
 }
 
 void PascalFile::rewrite() {
     close(); // Close if already open  
     stream_.open(filename_, std::ios::out);
+    g_last_io_error = stream_.good() ? 0 : 3; // 3 = path not found
+}
+
+void PascalFile::append() {
+    close(); // Close if already open
+    stream_.open(filename_, std::ios::out | std::ios::app);
+    g_last_io_error = stream_.good() ? 0 : 3; // 3 = path not found
 }
 
 void PascalFile::close() {
@@ -214,6 +225,13 @@ std::string pascal_timetostr(int hour, int minute, int second) {
     char buffer[9]; // "HH:MM:SS"
     std::snprintf(buffer, sizeof(buffer), "%02d:%02d:%02d", hour, minute, second);
     return std::string(buffer);
+}
+
+// I/O error checking
+int pascal_ioresult() {
+    int result = g_last_io_error;
+    g_last_io_error = 0; // Clear error after reading (Pascal behavior)
+    return result;
 }
 
 // Global variables for command-line arguments

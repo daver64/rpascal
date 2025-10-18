@@ -1409,6 +1409,8 @@ std::string CppGenerator::generateHeaders() {
 
 std::string CppGenerator::generateRuntimeIncludes() {
     return "// Using explicit std:: prefixes to avoid name conflicts\n\n"
+           "// Global I/O error tracking\n"
+           "static int g_last_io_error = 0;\n\n"
            "// Pascal string functions\n"
            "void Delete(std::string& s, int index, int count) {\n"
            "    if (index <= 0 || index > static_cast<int>(s.length())) return;\n"
@@ -1438,11 +1440,19 @@ std::string CppGenerator::generateRuntimeIncludes() {
            "    void reset() {\n"
            "        close();\n"
            "        stream_.open(filename_, std::ios::in);\n"
+           "        g_last_io_error = stream_.good() ? 0 : 2; // 2 = file not found\n"
            "    }\n"
            "    \n"
            "    void rewrite() {\n"
            "        close();\n"
            "        stream_.open(filename_, std::ios::out);\n"
+           "        g_last_io_error = stream_.good() ? 0 : 3; // 3 = path not found\n"
+           "    }\n"
+           "    \n"
+           "    void append() {\n"
+           "        close();\n"
+           "        stream_.open(filename_, std::ios::out | std::ios::app);\n"
+           "        g_last_io_error = stream_.good() ? 0 : 3; // 3 = path not found\n"
            "    }\n"
            "    \n"
            "    void close() {\n"
@@ -1503,7 +1513,13 @@ std::string CppGenerator::generateRuntimeIncludes() {
            "    \n"
            "    std::fstream& getStream() { return stream_; }\n"
            "    const std::string& getFilename() const { return filename_; }\n"
-           "};";
+           "};\n\n"
+           "// I/O error checking function\n"
+           "int pascal_ioresult() {\n"
+           "    int result = g_last_io_error;\n"
+           "    g_last_io_error = 0; // Clear error after reading (Pascal behavior)\n"
+           "    return result;\n"
+           "}";
 }
 
 std::string CppGenerator::generateForwardDeclarations(const std::vector<std::unique_ptr<Declaration>>& declarations) {
@@ -2447,6 +2463,9 @@ bool CppGenerator::generateSystemFunctionCall(CallExpression& node, const std::s
     } else if (lowerName == "randomize") {
         emit("std::srand(static_cast<unsigned int>(std::time(nullptr)))");
         return true;
+    } else if (lowerName == "ioresult") {
+        emit("pascal_ioresult()");
+        return true;
     } else if (lowerName == "paramcount") {
         emit("(pascal_argc - 1)");
         return true;
@@ -2543,6 +2562,12 @@ bool CppGenerator::generateFileFunctionCall(CallExpression& node, const std::str
         if (!node.getArguments().empty()) {
             node.getArguments()[0]->accept(*this);
             emit(".rewrite()");
+        }
+        return true;
+    } else if (lowerName == "append") {
+        if (!node.getArguments().empty()) {
+            node.getArguments()[0]->accept(*this);
+            emit(".append()");
         }
         return true;
     } else if (lowerName == "close") {
@@ -2681,7 +2706,8 @@ bool CppGenerator::isBuiltinFunction(const std::string& name) {
            lowerName == "chr" || lowerName == "ord" || lowerName == "pos" || lowerName == "copy" ||
            lowerName == "concat" || lowerName == "insert" || lowerName == "delete" ||
            lowerName == "assign" || lowerName == "reset" || lowerName == "rewrite" ||
-           lowerName == "close" || lowerName == "eof" || lowerName == "new" || lowerName == "dispose" ||
+           lowerName == "append" || lowerName == "close" || lowerName == "eof" || lowerName == "ioresult" ||
+           lowerName == "new" || lowerName == "dispose" ||
            // File operations
            lowerName == "blockread" || lowerName == "blockwrite" || 
            lowerName == "filepos" || lowerName == "filesize" || lowerName == "seek" ||
