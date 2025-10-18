@@ -1041,7 +1041,7 @@ std::unique_ptr<Expression> Parser::parsePrimaryExpression() {
             }
         }
         
-        return std::move(expr);
+        return expr;
     }
     
     if (check(TokenType::LEFT_PAREN)) {
