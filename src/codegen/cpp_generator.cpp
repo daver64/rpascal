@@ -77,56 +77,19 @@ void CppGenerator::visit(IdentifierExpression& node) {
         return;
     }
     
-    // Check if this is a procedure call without parentheses
+    // Check if this is a procedure call without parentheses - this should be an error
+    // since all functions and procedures require parentheses in our design
     if (symbolTable_) {
         auto symbol = symbolTable_->lookup(name);
-        if (symbol && symbol->getSymbolType() == SymbolType::PROCEDURE) {
-            // Check if this is a builtin procedure and handle it specially
-            if (isBuiltinFunction(name)) {
-                std::string lowerName = name;
-                std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), 
-                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                
-                if (lowerName == "randomize") {
-                    emit("std::srand(static_cast<unsigned int>(std::time(nullptr)))");
-                    return;
-                } else if (lowerName == "exit") {
-                    emit("return");
-                    return;
-                } else if (lowerName == "clrscr") {
-                    emit("#ifdef _WIN32\n    system(\"cls\");\n#else\n    system(\"clear\");\n#endif");
-                    return;
-                } else if (lowerName == "clreol") {
-                    emit("std::cout << \"\\033[K\"");
-                    return;
-                } else if (lowerName == "lowvideo" || lowerName == "highvideo" || lowerName == "normvideo" ||
-                           lowerName == "cursoron" || lowerName == "cursoroff" || lowerName == "nosound") {
-                    emit("/* " + name + " not implemented */");
-                    return;
-                }
-            }
-            // For procedures called without parameters, add parentheses for C++
-            emit(name + "()");
-            return;
-        } else if (symbol && symbol->getSymbolType() == SymbolType::FUNCTION) {
-            // Check if this is a builtin function without parameters
-            if (isBuiltinFunction(name)) {
-                if (name == "paramcount") {
-                    emit("(pascal_argc - 1)");
-                    return;
-                } else if (name == "random") {
-                    emit("(static_cast<double>(std::rand()) / RAND_MAX)");
-                    return;
-                }
-            }
-            // For user-defined functions, we might need to add () for C++
-            // For now, just emit the name for functions
-            emit(name);
+        if (symbol && (symbol->getSymbolType() == SymbolType::PROCEDURE || 
+                      symbol->getSymbolType() == SymbolType::FUNCTION)) {
+            // This should have been caught by semantic analysis as an error
+            emit("/* ERROR: " + name + " requires parentheses */");
             return;
         }
     }
     
-    // Regular variable or function reference
+    // Regular variable or constant reference
     emit(name);
 }
 
@@ -1656,6 +1619,15 @@ std::string CppGenerator::generateRuntimeIncludes() {
            "    int result = g_last_io_error;\n"
            "    g_last_io_error = 0; // Clear error after reading (Pascal behavior)\n"
            "    return result;\n"
+           "}\n\n"
+           "// Clear screen function\n"
+           "int pascal_clrscr() {\n"
+           "#ifdef _WIN32\n"
+           "    system(\"cls\");\n"
+           "#else\n"
+           "    system(\"clear\");\n"
+           "#endif\n"
+           "    return 0;\n"
            "}";
 }
 
@@ -2626,6 +2598,9 @@ bool CppGenerator::generateSystemFunctionCall(CallExpression& node, const std::s
         return true;
     } else if (lowerName == "randomize") {
         emit("std::srand(static_cast<unsigned int>(std::time(nullptr)))");
+        return true;
+    } else if (lowerName == "clrscr") {
+        emit("pascal_clrscr()");
         return true;
     } else if (lowerName == "ioresult") {
         emit("pascal_ioresult()");

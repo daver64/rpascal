@@ -551,27 +551,47 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration(bool isInt
 }
 
 std::unique_ptr<Statement> Parser::parseStatement() {
+    SourceLocation startLocation = currentToken_.getLocation();
+    
     try {
         if (check(TokenType::BEGIN)) {
             return parseCompoundStatement();
         } else if (match(TokenType::IF)) {
-            return parseIfStatement();
+            auto stmt = parseIfStatement();
+            stmt->setLocation(startLocation);
+            return stmt;
         } else if (match(TokenType::WHILE)) {
-            return parseWhileStatement();
+            auto stmt = parseWhileStatement();
+            stmt->setLocation(startLocation);
+            return stmt;
         } else if (match(TokenType::FOR)) {
-            return parseForStatement();
+            auto stmt = parseForStatement();
+            stmt->setLocation(startLocation);
+            return stmt;
         } else if (match(TokenType::REPEAT)) {
-            return parseRepeatStatement();
+            auto stmt = parseRepeatStatement();
+            stmt->setLocation(startLocation);
+            return stmt;
         } else if (match(TokenType::CASE)) {
-            return parseCaseStatement();
+            auto stmt = parseCaseStatement();
+            stmt->setLocation(startLocation);
+            return stmt;
         } else if (match(TokenType::WITH)) {
-            return parseWithStatement();
+            auto stmt = parseWithStatement();
+            stmt->setLocation(startLocation);
+            return stmt;
         } else if (match(TokenType::GOTO)) {
-            return parseGotoStatement();
+            auto stmt = parseGotoStatement();
+            stmt->setLocation(startLocation);
+            return stmt;
         } else if (match(TokenType::BREAK)) {
-            return std::make_unique<BreakStatement>();
+            auto stmt = std::make_unique<BreakStatement>();
+            stmt->setLocation(startLocation);
+            return stmt;
         } else if (match(TokenType::CONTINUE)) {
-            return std::make_unique<ContinueStatement>();
+            auto stmt = std::make_unique<ContinueStatement>();
+            stmt->setLocation(startLocation);
+            return stmt;
         } else if (check(TokenType::INTEGER_LITERAL)) {
             // Check if this is a label (number followed by colon)
             Token labelToken = currentToken_;
@@ -587,15 +607,21 @@ std::unique_ptr<Statement> Parser::parseStatement() {
                     statements.push_back(std::move(followingStmt));
                 }
                 
-                return std::make_unique<CompoundStatement>(std::move(statements));
+                auto stmt = std::make_unique<CompoundStatement>(std::move(statements));
+                stmt->setLocation(startLocation);
+                return stmt;
             } else {
                 // Not a label, backtrack by creating an expression from the integer
                 auto expr = std::make_unique<LiteralExpression>(labelToken);
                 if (match(TokenType::ASSIGN)) {
                     auto value = parseExpression();
-                    return std::make_unique<AssignmentStatement>(std::move(expr), std::move(value));
+                    auto stmt = std::make_unique<AssignmentStatement>(std::move(expr), std::move(value));
+                    stmt->setLocation(startLocation);
+                    return stmt;
                 } else {
-                    return std::make_unique<ExpressionStatement>(std::move(expr));
+                    auto stmt = std::make_unique<ExpressionStatement>(std::move(expr));
+                    stmt->setLocation(startLocation);
+                    return stmt;
                 }
             }
         } else if (check(TokenType::IDENTIFIER)) {
@@ -613,7 +639,9 @@ std::unique_ptr<Statement> Parser::parseStatement() {
                     statements.push_back(std::move(followingStmt));
                 }
                 
-                return std::make_unique<CompoundStatement>(std::move(statements));
+                auto stmt = std::make_unique<CompoundStatement>(std::move(statements));
+                stmt->setLocation(startLocation);
+                return stmt;
             } else {
                 // Not a label, check if it's a procedure call
                 if (match(TokenType::LEFT_PAREN)) {
@@ -621,11 +649,13 @@ std::unique_ptr<Statement> Parser::parseStatement() {
                     auto arguments = parseArgumentList();
                     consume(TokenType::RIGHT_PAREN, "Expected ')' after procedure arguments");
                     auto callee = std::make_unique<IdentifierExpression>(labelToken.getValue());
+                    callee->setLocation(labelToken.getLocation());
                     auto callExpr = std::make_unique<CallExpression>(std::move(callee), std::move(arguments));
                     return std::make_unique<ExpressionStatement>(std::move(callExpr));
                 } else {
                     // Not a procedure call, create identifier expression and handle postfix operations
                     std::unique_ptr<Expression> expr = std::make_unique<IdentifierExpression>(labelToken.getValue());
+                    expr->setLocation(labelToken.getLocation());
                     
                     // Handle postfix operations like ^, [index], .field
                     while (true) {
@@ -657,9 +687,13 @@ std::unique_ptr<Statement> Parser::parseStatement() {
                     
                     if (match(TokenType::ASSIGN)) {
                         auto value = parseExpression();
-                        return std::make_unique<AssignmentStatement>(std::move(expr), std::move(value));
+                        auto stmt = std::make_unique<AssignmentStatement>(std::move(expr), std::move(value));
+                        stmt->setLocation(startLocation);
+                        return stmt;
                     } else {
-                        return std::make_unique<ExpressionStatement>(std::move(expr));
+                        auto stmt = std::make_unique<ExpressionStatement>(std::move(expr));
+                        stmt->setLocation(startLocation);
+                        return stmt;
                     }
                 }
             }
@@ -668,9 +702,13 @@ std::unique_ptr<Statement> Parser::parseStatement() {
             auto expr = parseExpression();
             if (match(TokenType::ASSIGN)) {
                 auto value = parseExpression();
-                return std::make_unique<AssignmentStatement>(std::move(expr), std::move(value));
+                auto stmt = std::make_unique<AssignmentStatement>(std::move(expr), std::move(value));
+                stmt->setLocation(startLocation);
+                return stmt;
             } else {
-                return std::make_unique<ExpressionStatement>(std::move(expr));
+                auto stmt = std::make_unique<ExpressionStatement>(std::move(expr));
+                stmt->setLocation(startLocation);
+                return stmt;
             }
         }
     } catch (const std::exception&) {

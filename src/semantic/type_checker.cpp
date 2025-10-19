@@ -73,26 +73,7 @@ void SemanticAnalyzer::visit(IdentifierExpression& node) {
         
         // Check if this is a built-in function/procedure without parentheses
         if (isBuiltinFunction(node.getName())) {
-            std::string lowerName = node.getName();
-            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), 
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            
-            // Most CRT procedures return void
-            if (lowerName == "clrscr" || lowerName == "clreol" || lowerName == "textcolor" ||
-                lowerName == "textbackground" || lowerName == "lowvideo" || lowerName == "highvideo" ||
-                lowerName == "normvideo" || lowerName == "cursoron" || lowerName == "cursoroff" ||
-                lowerName == "sound" || lowerName == "nosound" || lowerName == "delay") {
-                currentExpressionType_ = DataType::VOID;
-            } else if (lowerName == "wherex" || lowerName == "wherey") {
-                currentExpressionType_ = DataType::INTEGER;
-            } else if (lowerName == "keypressed") {
-                currentExpressionType_ = DataType::BOOLEAN;
-            } else if (lowerName == "readkey") {
-                currentExpressionType_ = DataType::CHAR;
-            } else {
-                currentExpressionType_ = DataType::VOID; // Default for procedures
-            }
-            currentExpressionTypeName_ = "";
+            addError("Built-in function or procedure '" + node.getName() + "' requires parentheses: " + node.getName() + "()", node.getLocation());
             return;
         }
         
@@ -178,7 +159,21 @@ void SemanticAnalyzer::visit(IdentifierExpression& node) {
         return;
     }
     
-    if (symbol->getSymbolType() == SymbolType::FUNCTION) {
+    // Check if this is a procedure or function being used without parentheses
+    if (symbol->getSymbolType() == SymbolType::PROCEDURE) {
+        addError("Procedure '" + node.getName() + "' requires parentheses: " + node.getName() + "()", node.getLocation());
+        currentExpressionType_ = DataType::UNKNOWN;
+        currentExpressionTypeName_ = "";
+        return;
+    } else if (symbol->getSymbolType() == SymbolType::FUNCTION) {
+        // For functions without parameters, this might be valid in some contexts
+        // but to enforce our design decision, require parentheses for all function calls
+        if (symbol->getParameters().empty() && isBuiltinFunction(node.getName())) {
+            addError("Function '" + node.getName() + "' requires parentheses: " + node.getName() + "()", node.getLocation());
+            currentExpressionType_ = DataType::UNKNOWN;
+            currentExpressionTypeName_ = "";
+            return;
+        }
         // Function name used as expression (for return value assignment)
         currentExpressionType_ = symbol->getReturnType();
         currentExpressionTypeName_ = "";
